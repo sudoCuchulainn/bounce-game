@@ -5,10 +5,7 @@
 
 <meta
     name="viewport"
-    content="width=device-width,
-             initial-scale=1.0,
-             maximum-scale=1.0,
-             user-scalable=no"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
 >
 
 <title>BOUNCE</title>
@@ -23,27 +20,31 @@ html,
 body {
     margin: 0;
     padding: 0;
+
     width: 100%;
     height: 100%;
+
     overflow: hidden;
+
     background: #070a14;
+
     touch-action: none;
     user-select: none;
-    -webkit-user-select: none;
 }
 
 body {
     display: flex;
     justify-content: center;
     align-items: center;
+
     font-family: Arial, sans-serif;
 }
 
 #game {
     display: block;
-    width: 480px;
-    height: 800px;
+
     background: #070a14;
+
     touch-action: none;
 }
 </style>
@@ -51,30 +52,18 @@ body {
 
 <body>
 
-<canvas id="game" width="480" height="800"></canvas>
+<canvas id="game"></canvas>
 
 <script>
 "use strict";
 
 /* =========================================================
    BOUNCE
-   =========================================================
-
-   Core idea:
-
-   Bounce upward.
-   Make precise landings.
-   Maintain FLOW.
-   Climb as high as possible.
-
-   Top / side / bottom / corner collisions are all valid.
-
    ========================================================= */
 
-
-/* =========================================================
+/* ---------------------------------------------------------
    CANVAS
-   ========================================================= */
+--------------------------------------------------------- */
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -90,6 +79,9 @@ function resize() {
         window.innerWidth / WIDTH,
         window.innerHeight / HEIGHT
     );
+
+    canvas.width = WIDTH * scale;
+    canvas.height = HEIGHT * scale;
 
     canvas.style.width =
         `${WIDTH * scale}px`;
@@ -107,7 +99,7 @@ resize();
 
 
 /* =========================================================
-   COLORS
+   SETTINGS
    ========================================================= */
 
 const WHITE = [245, 250, 255];
@@ -125,51 +117,86 @@ const PLATFORM_DARK = [25, 45, 70];
 const PLATFORM_HIGHLIGHT = [180, 245, 255];
 
 
-/* =========================================================
-   PHYSICS
-   ========================================================= */
+/* ---------------------------------------------------------
+   PLAYER PHYSICS
+--------------------------------------------------------- */
 
-const GRAVITY = 1450;
+const GRAVITY = 1500;
 
-const BOUNCE_POWER = 930;
-const DIVE_BOUNCE_POWER = 1280;
+const BOUNCE_POWER = 980;
 
-const MAX_FALL_SPEED = 1650;
-const DIVE_ACCELERATION = 2300;
+const DIVE_BOUNCE_POWER = 1320;
 
-const AIR_ACCEL = 1250;
-const AIR_FRICTION = 0.94;
-const MAX_X_SPEED = 315;
+const MAX_FALL_SPEED = 1700;
 
-const WALL_RESTITUTION = 0.90;
-const PLATFORM_RESTITUTION = 0.97;
+const DIVE_ACCELERATION = 2500;
+
+const AIR_ACCEL = 2100;
+
+const AIR_FRICTION = 0.985;
+
+const MAX_X_SPEED = 450;
+
+const WALL_RESTITUTION = 0.92;
+
+const PLATFORM_RESTITUTION = 0.98;
 
 const BALL_RADIUS = 17;
 
 const PHYSICS_STEPS = 6;
 
+
+/* ---------------------------------------------------------
+   PLATFORM GENERATION
+--------------------------------------------------------- */
+
 const CELL = 34;
 
+/*
+ * This is intentionally much larger than before.
+ *
+ * The game should feel like:
+ *
+ * LEFT
+ *       platform
+ *
+ *                         RIGHT
+ * 
+ * LEFT
+ *
+ *                         RIGHT
+ *
+ * rather than a pile of platforms.
+ */
 
-/* =========================================================
+const MIN_VERTICAL_GAP = 155;
+
+const MAX_VERTICAL_GAP = 190;
+
+const PLATFORM_SIDE_MARGIN = 55;
+
+
+/* ---------------------------------------------------------
    CAMERA
-   ========================================================= */
+--------------------------------------------------------- */
 
-const CAMERA_TARGET_Y = 320;
-const CAMERA_FOLLOW_SPEED = 8;
+const CAMERA_TARGET_Y = 330;
+
+const CAMERA_FOLLOW_SPEED = 7;
 
 
-/* =========================================================
-   PLATFORM GENERATION
-   ========================================================= */
+/* ---------------------------------------------------------
+   PLATFORM MOVEMENT
+--------------------------------------------------------- */
 
-const SPAWN_INTERVAL = 0.48;
+const SPAWN_INTERVAL = 0.45;
+
 const DESPAWN_DISTANCE = 250;
 
 
 /* =========================================================
    INPUT
-   ========================================================= */
+========================================================= */
 
 let keyLeft = false;
 let keyRight = false;
@@ -177,11 +204,12 @@ let keyDown = false;
 
 let touchActive = false;
 
+let touchStartX = 0;
+let touchStartY = 0;
+
 let touchX = 0;
 let touchY = 0;
 
-let touchStartX = 0;
-let touchStartY = 0;
 
 function pointerPosition(event) {
 
@@ -190,19 +218,19 @@ function pointerPosition(event) {
 
     return {
         x:
-            (event.clientX - rect.left) /
-            scale,
+            (event.clientX - rect.left)
+            / scale,
 
         y:
-            (event.clientY - rect.top) /
-            scale
+            (event.clientY - rect.top)
+            / scale
     };
 }
 
 
 /* ---------------------------------------------------------
    TOUCH
-   --------------------------------------------------------- */
+--------------------------------------------------------- */
 
 canvas.addEventListener(
     "pointerdown",
@@ -221,16 +249,11 @@ canvas.addEventListener(
         touchX = p.x;
         touchY = p.y;
 
-        try {
-            canvas.setPointerCapture(
-                event.pointerId
-            );
-        } catch (_) {}
-
         if (
             !game.started ||
             game.gameOver
         ) {
+
             game.restart();
         }
     }
@@ -263,12 +286,6 @@ canvas.addEventListener(
         event.preventDefault();
 
         touchActive = false;
-
-        try {
-            canvas.releasePointerCapture(
-                event.pointerId
-            );
-        } catch (_) {}
     }
 );
 
@@ -276,6 +293,7 @@ canvas.addEventListener(
 canvas.addEventListener(
     "pointercancel",
     () => {
+
         touchActive = false;
     }
 );
@@ -283,32 +301,32 @@ canvas.addEventListener(
 
 /* ---------------------------------------------------------
    KEYBOARD
-   --------------------------------------------------------- */
+--------------------------------------------------------- */
 
 window.addEventListener(
     "keydown",
     event => {
 
-        const key =
-            event.key.toLowerCase();
-
         if (
             event.key === "ArrowLeft" ||
-            key === "a"
+            event.key.toLowerCase() === "a"
         ) {
+
             keyLeft = true;
         }
 
         if (
             event.key === "ArrowRight" ||
-            key === "d"
+            event.key.toLowerCase() === "d"
         ) {
+
             keyRight = true;
         }
 
         if (
             event.key === "ArrowDown"
         ) {
+
             keyDown = true;
         }
 
@@ -320,6 +338,7 @@ window.addEventListener(
                 !game.started ||
                 game.gameOver
             ) {
+
                 game.restart();
             }
         }
@@ -327,6 +346,7 @@ window.addEventListener(
         if (
             event.key === "Escape"
         ) {
+
             location.reload();
         }
     }
@@ -337,26 +357,26 @@ window.addEventListener(
     "keyup",
     event => {
 
-        const key =
-            event.key.toLowerCase();
-
         if (
             event.key === "ArrowLeft" ||
-            key === "a"
+            event.key.toLowerCase() === "a"
         ) {
+
             keyLeft = false;
         }
 
         if (
             event.key === "ArrowRight" ||
-            key === "d"
+            event.key.toLowerCase() === "d"
         ) {
+
             keyRight = false;
         }
 
         if (
             event.key === "ArrowDown"
         ) {
+
             keyDown = false;
         }
     }
@@ -365,16 +385,20 @@ window.addEventListener(
 
 /* =========================================================
    HELPERS
-   ========================================================= */
+========================================================= */
 
 function clamp(
     value,
     minimum,
     maximum
 ) {
+
     return Math.max(
         minimum,
-        Math.min(maximum, value)
+        Math.min(
+            maximum,
+            value
+        )
     );
 }
 
@@ -384,6 +408,7 @@ function lerp(
     b,
     amount
 ) {
+
     return a +
         (b - a) *
         amount;
@@ -391,126 +416,30 @@ function lerp(
 
 
 function color(c) {
+
     return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
 
-function rgba(c, alpha) {
-    return `rgba(
-        ${c[0]},
-        ${c[1]},
-        ${c[2]},
-        ${alpha}
-    )`;
-}
-
-
-function roundRect(
-    x,
-    y,
-    width,
-    height,
-    radius
+function rgba(
+    c,
+    alpha
 ) {
 
-    ctx.beginPath();
-
-    ctx.roundRect(
-        x,
-        y,
-        width,
-        height,
-        radius
-    );
-
-    ctx.fill();
+    return `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
 }
 
 
 /* =========================================================
-   FLOATING TEXT
-   ========================================================= */
-
-class FloatingText {
-
-    constructor(
-        x,
-        y,
-        text,
-        colorValue,
-        size = 22
-    ) {
-
-        this.x = x;
-        this.y = y;
-
-        this.text = text;
-
-        this.color = colorValue;
-
-        this.size = size;
-
-        this.life = 0.75;
-        this.maxLife = 0.75;
-
-        this.vy = -55;
-    }
-
-
-    update(dt) {
-
-        this.y +=
-            this.vy * dt;
-
-        this.vy *= 0.97;
-
-        this.life -= dt;
-    }
-
-
-    draw(cameraY) {
-
-        if (this.life <= 0) {
-            return;
-        }
-
-        const alpha =
-            this.life /
-            this.maxLife;
-
-        ctx.globalAlpha =
-            alpha;
-
-        ctx.textAlign =
-            "center";
-
-        ctx.font =
-            `bold ${this.size}px Arial`;
-
-        ctx.fillStyle =
-            color(this.color);
-
-        ctx.fillText(
-            this.text,
-            this.x,
-            this.y + cameraY
-        );
-
-        ctx.globalAlpha = 1;
-    }
-}
-
-
-/* =========================================================
-   PARTICLE
-   ========================================================= */
+   PARTICLES
+========================================================= */
 
 class Particle {
 
     constructor(
         x,
         y,
-        particleColor,
+        c,
         power = 1
     ) {
 
@@ -519,13 +448,16 @@ class Particle {
 
         const angle =
             Math.random() *
-            Math.PI * 2;
+            Math.PI *
+            2;
 
         const speed =
             (
                 70 +
-                Math.random() * 200
-            ) * power;
+                Math.random() *
+                200
+            ) *
+            power;
 
         this.vx =
             Math.cos(angle) *
@@ -537,41 +469,49 @@ class Particle {
 
         this.life =
             0.2 +
-            Math.random() * 0.35;
+            Math.random() *
+            0.4;
 
         this.maxLife =
             this.life;
 
         this.size =
             2 +
-            Math.random() * 4;
+            Math.random() *
+            4;
 
-        this.color =
-            particleColor;
+        this.color = c;
     }
 
 
     update(dt) {
 
         this.x +=
-            this.vx * dt;
+            this.vx *
+            dt;
 
         this.y +=
-            this.vy * dt;
+            this.vy *
+            dt;
 
         this.vy +=
-            450 * dt;
+            450 *
+            dt;
 
         this.vx *=
             0.985;
 
-        this.life -= dt;
+        this.life -=
+            dt;
     }
 
 
     draw(cameraY) {
 
-        if (this.life <= 0) {
+        if (
+            this.life <= 0
+        ) {
+
             return;
         }
 
@@ -582,7 +522,8 @@ class Particle {
         const size =
             Math.max(
                 1,
-                this.size * alpha
+                this.size *
+                alpha
             );
 
         ctx.fillStyle =
@@ -608,36 +549,31 @@ class Particle {
 
 /* =========================================================
    PLATFORM
-   ========================================================= */
+========================================================= */
 
 class Platform {
 
     constructor(
         x,
         y,
-        widthCells = 5,
+        width = 5,
         moving = false,
         bonus = false
     ) {
 
         this.x = x;
+
         this.y = y;
 
         this.widthCells =
-            widthCells;
+            width;
 
         this.width =
-            widthCells *
+            width *
             CELL;
 
         this.height =
             CELL;
-
-        this.moving =
-            moving;
-
-        this.bonus =
-            bonus;
 
         this.vx =
             moving
@@ -647,12 +583,19 @@ class Platform {
                         : 1
                 ) *
                 (
-                    18 +
-                    Math.random() * 35
+                    25 +
+                    Math.random() *
+                    55
                 )
                 : 0;
 
         this.vy = 0;
+
+        this.moving =
+            moving;
+
+        this.bonus =
+            bonus;
 
         this.color =
             bonus
@@ -663,12 +606,31 @@ class Platform {
                         PLATFORM_COLORS.length
                     )
                 ];
+
+        /*
+         * IMPORTANT:
+         *
+         * A platform only gives its landing
+         * points once.
+         *
+         * The player can bounce off it again,
+         * but it won't generate another
+         * score event until the player lands
+         * on a different platform.
+         */
+
+        this.scoredThisVisit =
+            false;
+
+        this.id =
+            Platform.nextId++;
     }
 
 
     get rect() {
 
         return {
+
             left:
                 this.x -
                 this.width / 2,
@@ -690,52 +652,56 @@ class Platform {
 
     update(
         dt,
-        verticalSpeed
+        platformSpeed
     ) {
 
-        /*
-         * Platforms do not move at the
-         * beginning of the game.
-
-         * Their downward world movement
-         * gradually increases with height.
-         */
-
         this.y +=
-            verticalSpeed *
+            platformSpeed *
             dt;
 
-        if (!this.moving) {
-            return;
-        }
-
-        this.x +=
-            this.vx * dt;
-
-        const half =
-            this.width / 2;
-
         if (
-            this.x - half < 8
+            this.moving
         ) {
 
-            this.x =
-                8 + half;
+            this.x +=
+                this.vx *
+                dt;
 
-            this.vx =
-                Math.abs(this.vx);
-        }
+            const half =
+                this.width / 2;
 
-        if (
-            this.x + half >
-            WIDTH - 8
-        ) {
+            if (
+                this.x -
+                half <
+                8
+            ) {
 
-            this.x =
-                WIDTH - 8 - half;
+                this.x =
+                    8 +
+                    half;
 
-            this.vx =
-                -Math.abs(this.vx);
+                this.vx =
+                    Math.abs(
+                        this.vx
+                    );
+            }
+
+            if (
+                this.x +
+                half >
+                WIDTH - 8
+            ) {
+
+                this.x =
+                    WIDTH -
+                    8 -
+                    half;
+
+                this.vx =
+                    -Math.abs(
+                        this.vx
+                    );
+            }
         }
     }
 
@@ -745,22 +711,19 @@ class Platform {
         const r =
             this.rect;
 
-        const screenY =
+        const sy =
             r.top +
             cameraY;
 
         if (
-            screenY >
-            HEIGHT + 100 ||
-            screenY <
-            -100
+            sy >
+                HEIGHT + 100 ||
+            sy <
+                -100
         ) {
+
             return;
         }
-
-        /*
-         * Dark backing.
-         */
 
         ctx.fillStyle =
             color(
@@ -769,15 +732,11 @@ class Platform {
 
         roundRect(
             r.left,
-            screenY + 5,
+            sy + 5,
             this.width,
             CELL,
             7
         );
-
-        /*
-         * Main platform.
-         */
 
         ctx.fillStyle =
             color(
@@ -786,15 +745,11 @@ class Platform {
 
         roundRect(
             r.left,
-            screenY,
+            sy,
             this.width,
             CELL,
             7
         );
-
-        /*
-         * Highlight.
-         */
 
         ctx.strokeStyle =
             color(
@@ -806,22 +761,25 @@ class Platform {
         ctx.beginPath();
 
         ctx.moveTo(
-            r.left + 8,
-            screenY + 5
+            r.left + 7,
+            sy + 5
         );
 
         ctx.lineTo(
-            r.right - 8,
-            screenY + 5
+            r.right - 7,
+            sy + 5
         );
 
         ctx.stroke();
+
 
         /*
          * Moving platform indicator.
          */
 
-        if (this.moving) {
+        if (
+            this.moving
+        ) {
 
             ctx.fillStyle =
                 "rgba(255,255,255,0.55)";
@@ -830,7 +788,8 @@ class Platform {
 
             ctx.arc(
                 this.x,
-                screenY + CELL / 2,
+                sy +
+                    CELL / 2,
                 3,
                 0,
                 Math.PI * 2
@@ -839,11 +798,14 @@ class Platform {
             ctx.fill();
         }
 
+
         /*
          * Bonus platform indicator.
          */
 
-        if (this.bonus) {
+        if (
+            this.bonus
+        ) {
 
             ctx.strokeStyle =
                 "rgba(255,255,255,0.8)";
@@ -854,8 +816,9 @@ class Platform {
 
             ctx.arc(
                 this.x,
-                screenY + CELL / 2,
-                CELL * 0.31,
+                sy +
+                    CELL / 2,
+                CELL * 0.32,
                 0,
                 Math.PI * 2
             );
@@ -866,13 +829,39 @@ class Platform {
 }
 
 
+Platform.nextId = 1;
+
+
+function roundRect(
+    x,
+    y,
+    width,
+    height,
+    radius
+) {
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+        x,
+        y,
+        width,
+        height,
+        radius
+    );
+
+    ctx.fill();
+}
+
+
 /* =========================================================
    PLAYER
-   ========================================================= */
+========================================================= */
 
 class Player {
 
     constructor() {
+
         this.reset();
     }
 
@@ -882,15 +871,18 @@ class Player {
         this.x =
             WIDTH / 2;
 
-        this.y = 520;
+        this.y =
+            520;
 
         this.vx = 0;
+
         this.vy = 0;
 
         this.radius =
             BALL_RADIUS;
 
         this.squash = 1;
+
         this.stretch = 1;
 
         this.trail = [];
@@ -899,8 +891,7 @@ class Player {
 
         this.diving = false;
 
-        this.lastCollision =
-            null;
+        this.lastPlatform = null;
     }
 
 
@@ -908,76 +899,58 @@ class Player {
 
         let direction = 0;
 
+
         /*
          * Keyboard.
          */
 
         if (keyLeft) {
-            direction -= 1;
+            direction--;
         }
 
         if (keyRight) {
-            direction += 1;
+            direction++;
         }
 
+
         /*
-         * Touch control.
-
-         * Instead of simply deciding
-         * "left swipe / right swipe",
-         * the thumb position acts like
-         * a steering control.
-
-         * The ball is the center reference.
+         * Touch.
+         *
+         * Horizontal distance from the starting
+         * point determines how strongly the player
+         * moves.
          */
 
-        if (touchActive) {
+        if (
+            touchActive
+        ) {
 
             const dx =
                 touchX -
-                this.x;
-
-            /*
-             * Small dead zone.
-             */
+                touchStartX;
 
             if (
-                Math.abs(dx) > 12
+                Math.abs(dx) >
+                8
             ) {
 
                 direction =
                     clamp(
-                        dx / 105,
+                        dx / 70,
                         -1,
                         1
                     );
-            } else {
-
-                direction = 0;
             }
         }
 
-        /*
-         * Horizontal movement.
-         */
 
         this.vx +=
             direction *
             AIR_ACCEL *
             dt;
 
-        /*
-         * Friction.
-
-         * More friction = easier
-         * to stop and correct.
-         */
-
         this.vx *=
-            Math.pow(
-                AIR_FRICTION,
-                dt * 60
-            );
+            AIR_FRICTION;
 
         this.vx =
             clamp(
@@ -989,28 +962,34 @@ class Player {
 
         /*
          * Dive.
-
-         * Only available while falling.
          */
 
         this.diving = false;
 
-        if (this.vy > 0) {
+        if (
+            this.vy > 0
+        ) {
 
-            if (keyDown) {
+            if (
+                keyDown
+            ) {
+
                 this.diving = true;
             }
 
             if (
                 touchActive &&
                 touchY -
-                touchStartY >
-                55
+                    touchStartY >
+                    55
             ) {
+
                 this.diving = true;
             }
 
-            if (this.diving) {
+            if (
+                this.diving
+            ) {
 
                 this.vy +=
                     DIVE_ACCELERATION *
@@ -1029,7 +1008,8 @@ class Player {
     gravity(dt) {
 
         this.vy +=
-            GRAVITY * dt;
+            GRAVITY *
+            dt;
 
         this.vy =
             Math.min(
@@ -1042,10 +1022,12 @@ class Player {
     move(dt) {
 
         this.x +=
-            this.vx * dt;
+            this.vx *
+            dt;
 
         this.y +=
-            this.vy * dt;
+            this.vy *
+            dt;
     }
 
 
@@ -1096,7 +1078,7 @@ class Player {
     bounce(
         nx,
         ny,
-        platformVelocityY
+        platformVy
     ) {
 
         const relativeVx =
@@ -1104,31 +1086,37 @@ class Player {
 
         const relativeVy =
             this.vy -
-            platformVelocityY;
+            platformVy;
 
-        const velocityIntoSurface =
-            relativeVx * nx +
-            relativeVy * ny;
+        const into =
+            relativeVx *
+                nx +
+            relativeVy *
+                ny;
 
         if (
-            velocityIntoSurface >= 0
+            into >= 0
         ) {
+
             return null;
         }
 
+
         /*
-         * Reflect velocity.
+         * Reflect velocity from the
+         * surface.
          */
 
         this.vx -=
             2 *
-            velocityIntoSurface *
+            into *
             nx;
 
         this.vy -=
             2 *
-            velocityIntoSurface *
+            into *
             ny;
+
 
         this.vx *=
             PLATFORM_RESTITUTION;
@@ -1137,39 +1125,51 @@ class Player {
             PLATFORM_RESTITUTION;
 
 
+        let type =
+            "side";
+
+
         /*
-         * TOP
+         * TOP LANDING
          */
 
         if (
             ny < -0.5
         ) {
 
-            const wasDive =
-                this.diving;
+            type =
+                "top";
 
-            let bouncePower =
+            let power =
                 BOUNCE_POWER;
 
-            if (wasDive) {
 
-                const diveBonus =
+            /*
+             * Dive bounce.
+             */
+
+            if (
+                this.diving
+            ) {
+
+                const bonus =
                     Math.max(
                         0,
                         this.vy
                     ) *
-                    0.35;
+                    0.45;
 
-                bouncePower =
+                power =
                     Math.max(
                         DIVE_BOUNCE_POWER,
                         BOUNCE_POWER +
-                        diveBonus
+                        bonus
                     );
             }
 
+
             this.vy =
-                -bouncePower;
+                -power;
 
             this.squash =
                 1.4;
@@ -1179,11 +1179,21 @@ class Player {
 
             this.bounces++;
 
-            this.diving = false;
+
+            const wasDive =
+                this.diving;
+
+            this.diving =
+                false;
+
 
             return {
-                type: "top",
-                dive: wasDive
+
+                type:
+                    "top",
+
+                dive:
+                    wasDive
             };
         }
 
@@ -1196,15 +1206,17 @@ class Player {
             ny > 0.5
         ) {
 
+            type =
+                "bottom";
+
             this.squash =
-                1.18;
+                1.15;
 
             this.stretch =
                 0.85;
 
             return {
-                type: "bottom",
-                dive: false
+                type
             };
         }
 
@@ -1214,14 +1226,13 @@ class Player {
          */
 
         this.squash =
-            1.12;
+            1.15;
 
         this.stretch =
-            0.88;
+            0.85;
 
         return {
-            type: "side",
-            dive: false
+            type
         };
     }
 
@@ -1244,14 +1255,20 @@ class Player {
 
 
         this.trail.push({
-            x: this.x,
-            y: this.y
+
+            x:
+                this.x,
+
+            y:
+                this.y
         });
+
 
         if (
             this.trail.length >
             14
         ) {
+
             this.trail.shift();
         }
     }
@@ -1269,7 +1286,7 @@ class Player {
             i++
         ) {
 
-            const point =
+            const p =
                 this.trail[i];
 
             const progress =
@@ -1280,19 +1297,17 @@ class Player {
                 );
 
             ctx.fillStyle =
-                `rgba(
-                    80,
-                    210,
-                    255,
-                    ${0.05 +
-                      progress * 0.14}
-                )`;
+                `rgba(80,210,255,${
+                    0.06 +
+                    progress *
+                    0.14
+                })`;
 
             ctx.beginPath();
 
             ctx.arc(
-                point.x,
-                point.y + cameraY,
+                p.x,
+                p.y + cameraY,
                 Math.max(
                     2,
                     this.radius *
@@ -1316,24 +1331,16 @@ class Player {
             2 *
             this.stretch;
 
-        const screenY =
+        const sy =
             this.y +
             cameraY;
 
 
-        /*
-         * Glow.
-         */
-
-        ctx.shadowBlur = 18;
+        ctx.shadowBlur =
+            18;
 
         ctx.shadowColor =
             "rgba(80,220,255,0.65)";
-
-
-        /*
-         * Ball.
-         */
 
         ctx.fillStyle =
             "#f5faff";
@@ -1342,7 +1349,7 @@ class Player {
 
         ctx.ellipse(
             this.x,
-            screenY,
+            sy,
             width / 2,
             height / 2,
             0,
@@ -1352,13 +1359,9 @@ class Player {
 
         ctx.fill();
 
+        ctx.shadowBlur =
+            0;
 
-        ctx.shadowBlur = 0;
-
-
-        /*
-         * Highlight.
-         */
 
         ctx.fillStyle =
             "#50c8ff";
@@ -1367,19 +1370,23 @@ class Player {
 
         ctx.ellipse(
             this.x -
-                width * 0.18,
+                width *
+                0.18,
 
-            screenY -
-                height * 0.22,
+            sy -
+                height *
+                0.22,
 
             Math.max(
                 3,
-                width * 0.15
+                width *
+                0.15
             ),
 
             Math.max(
                 3,
-                height * 0.12
+                height *
+                0.12
             ),
 
             0,
@@ -1394,7 +1401,7 @@ class Player {
 
 /* =========================================================
    GAME
-   ========================================================= */
+========================================================= */
 
 class Game {
 
@@ -1407,25 +1414,14 @@ class Game {
 
         this.particles = [];
 
-        this.floatingTexts = [];
+        this.cameraY = 0;
 
 
         /*
-         * Run stats.
+         * SCORE
          */
 
         this.score = 0;
-
-        this.height = 0;
-
-        this.flow = 0;
-
-        this.maxFlow = 0;
-
-
-        /*
-         * Records.
-         */
 
         this.bestScore =
             Number(
@@ -1433,6 +1429,13 @@ class Game {
                     "bounceBestScore"
                 ) || 0
             );
+
+
+        /*
+         * HEIGHT
+         */
+
+        this.height = 0;
 
         this.bestHeight =
             Number(
@@ -1443,19 +1446,28 @@ class Game {
 
 
         /*
-         * World.
+         * FLOW
          */
 
-        this.cameraY = 0;
+        this.flow = 0;
 
-        this.spawnTimer = 0;
-
-        this.nextPlatformY =
-            -100;
+        this.maxFlow = 0;
 
 
         /*
-         * State.
+         * PLATFORM SPAWNING
+         */
+
+        this.spawnTimer = 0;
+
+        this.nextPlatformY = -100;
+
+        this.lastPlatformSide =
+            "left";
+
+
+        /*
+         * GAME STATE
          */
 
         this.started = false;
@@ -1464,7 +1476,7 @@ class Game {
 
 
         /*
-         * Effects.
+         * EFFECTS
          */
 
         this.shake = 0;
@@ -1473,13 +1485,14 @@ class Game {
 
 
         /*
-         * Climb tracking.
+         * HEIGHT SPEED TRACKING
          */
 
-        this.previousHeight = 0;
+        this.lastHeight = 0;
 
-        this.previousHeightTime =
-            performance.now() / 1000;
+        this.lastHeightTime =
+            performance.now() /
+            1000;
 
 
         this.spawnInitialPlatforms();
@@ -1494,9 +1507,6 @@ class Game {
 
         this.particles = [];
 
-        this.floatingTexts = [];
-
-
         this.cameraY = 0;
 
         this.score = 0;
@@ -1507,24 +1517,24 @@ class Game {
 
         this.maxFlow = 0;
 
-
         this.spawnTimer = 0;
 
         this.gameOver = false;
 
         this.started = true;
 
-
         this.shake = 0;
 
         this.flash = 0;
 
+        this.lastPlatformSide =
+            "left";
 
-        this.previousHeight = 0;
+        this.lastHeight = 0;
 
-        this.previousHeightTime =
-            performance.now() / 1000;
-
+        this.lastHeightTime =
+            performance.now() /
+            1000;
 
         this.spawnInitialPlatforms();
     }
@@ -1533,301 +1543,389 @@ class Game {
     difficulty() {
 
         return clamp(
-            this.height / 5000,
+            this.height /
+                6000,
             0,
             1
         );
     }
 
 
-    /*
-     * Platform world movement.
-
-     * This starts at zero so the
-     * opening feels calm.
-     */
-
     platformSpeed() {
 
-        const d =
-            this.difficulty();
-
         return lerp(
-            0,
-            110,
-            d
+            25,
+            145,
+            this.difficulty()
         );
     }
 
 
-    /*
-     * Moving-platform chance.
-     */
-
-    movingChance() {
-
-        const d =
-            this.difficulty();
-
-        if (
-            this.height < 900
-        ) {
-            return 0;
-        }
-
-        return lerp(
-            0.05,
-            0.35,
-            clamp(
-                (d - 0.18) /
-                0.82,
-                0,
-                1
-            )
-        );
-    }
-
+    /* =====================================================
+       INITIAL PLATFORMS
+    ===================================================== */
 
     spawnInitialPlatforms() {
 
-        const starting = [
+        this.platforms = [];
 
-            [
+
+        /*
+         * Starting platform.
+         */
+
+        this.platforms.push(
+            new Platform(
                 WIDTH * 0.50,
                 625,
-                7
-            ],
-
-            [
-                WIDTH * 0.43,
-                490,
-                6
-            ],
-
-            [
-                WIDTH * 0.57,
-                355,
-                6
-            ],
-
-            [
-                WIDTH * 0.46,
-                220,
-                6
-            ],
-
-            [
-                WIDTH * 0.55,
-                85,
-                6
-            ]
-        ];
+                5,
+                false,
+                false
+            )
+        );
 
 
-        for (
-            const platform
-            of starting
-        ) {
+        /*
+         * The first jumps deliberately
+         * alternate sides.
+         */
 
-            this.platforms.push(
-                new Platform(
-                    platform[0],
-                    platform[1],
-                    platform[2],
-                    false,
-                    false
-                )
-            );
-        }
+        this.platforms.push(
+            new Platform(
+                115,
+                455,
+                5,
+                false,
+                false
+            )
+        );
+
+
+        this.platforms.push(
+            new Platform(
+                365,
+                285,
+                5,
+                false,
+                false
+            )
+        );
+
+
+        this.platforms.push(
+            new Platform(
+                110,
+                115,
+                5,
+                false,
+                false
+            )
+        );
 
 
         this.nextPlatformY =
             -65;
+
+        this.lastPlatformSide =
+            "left";
     }
 
 
-    /*
-     * Find the highest platform
-     * that is close to the spawn area.
-     */
-
-    getHighestPlatform() {
-
-        if (
-            this.platforms.length === 0
-        ) {
-            return null;
-        }
-
-        let highest =
-            this.platforms[0];
-
-        for (
-            const platform
-            of this.platforms
-        ) {
-
-            if (
-                platform.y <
-                highest.y
-            ) {
-                highest =
-                    platform;
-            }
-        }
-
-        return highest;
-    }
-
+    /* =====================================================
+       PLATFORM SPAWNING
+    ===================================================== */
 
     spawnPlatform() {
 
         const d =
             this.difficulty();
 
+
+        /*
+         * Find the most recently generated
+         * platform above us.
+         */
+
         const previous =
-            this.getHighestPlatform();
+            this.platforms
+                .filter(
+                    p =>
+                        p.y <
+                        this.nextPlatformY +
+                        230
+                )
+                .sort(
+                    (a, b) =>
+                        b.y -
+                        a.y
+                )[0];
 
 
         /*
-         * Calculate a reachable X range.
-
-         * We intentionally limit the
-         * horizontal shift.
+         * -------------------------------------------------
+         * SIDE-TO-SIDE GENERATION
+         * -------------------------------------------------
+         *
+         * Most platforms deliberately appear on
+         * the opposite side from the previous one.
+         *
+         * This creates the main rhythm:
+         *
+         * LEFT -> RIGHT -> LEFT -> RIGHT
+         *
+         * with occasional variations.
          */
+
+        let side;
+
+        const variationChance =
+            lerp(
+                0.08,
+                0.22,
+                d
+            );
+
+
+        if (
+            Math.random() <
+            variationChance
+        ) {
+
+            side =
+                "center";
+
+        } else {
+
+            side =
+                this.lastPlatformSide ===
+                    "left"
+
+                    ? "right"
+
+                    : "left";
+        }
+
 
         let x;
 
-        if (previous) {
 
-            const maxShift =
-                lerp(
-                    70,
-                    145,
-                    d
-                );
+        if (
+            side === "left"
+        ) {
+
+            /*
+             * Keep the platform genuinely
+             * toward the left.
+             */
 
             x =
-                previous.x +
+                75 +
+                Math.random() *
+                95;
+
+        } else if (
+            side === "right"
+        ) {
+
+            x =
+                WIDTH -
                 (
-                    Math.random() * 2 -
-                    1
-                ) *
-                maxShift;
-
-            x =
-                clamp(
-                    x,
-                    65,
-                    WIDTH - 65
+                    75 +
+                    Math.random() *
+                    95
                 );
 
         } else {
 
+            /*
+             * Center platforms are occasional
+             * breathing room.
+             */
+
             x =
-                70 +
-                Math.random() *
-                (WIDTH - 140);
+                WIDTH / 2 +
+                (
+                    Math.random() *
+                    120 -
+                    60
+                );
         }
 
 
         /*
-         * Platform width.
+         * If the previous platform exists,
+         * make sure the horizontal jump isn't
+         * ridiculous.
+         */
 
-         * The game starts generous and
-         * becomes more precise.
+        if (
+            previous
+        ) {
+
+            const maximumReach =
+                lerp(
+                    300,
+                    390,
+                    d
+                );
+
+            if (
+                Math.abs(
+                    x -
+                    previous.x
+                ) >
+                maximumReach
+            ) {
+
+                x =
+                    previous.x +
+                    (
+                        x >
+                        previous.x
+                            ? maximumReach
+                            : -maximumReach
+                    );
+            }
+        }
+
+
+        x =
+            clamp(
+                x,
+                PLATFORM_SIDE_MARGIN,
+                WIDTH -
+                    PLATFORM_SIDE_MARGIN
+            );
+
+
+        /*
+         * Platform width.
          */
 
         let width;
 
         if (
-            this.height < 700
+            d < 0.25
         ) {
 
-            width = 6;
+            width = 5;
 
         } else if (
-            this.height < 1600
+            d < 0.55
         ) {
 
             width =
                 Math.random() <
                 0.75
                     ? 5
-                    : 6;
-
-        } else if (
-            this.height < 3000
-        ) {
-
-            width =
-                Math.random() <
-                0.65
-                    ? 5
                     : 4;
 
         } else {
 
             width =
-                [
-                    3,
-                    4,
-                    4,
-                    5
-                ][
+                [3, 4, 4, 5][
                     Math.floor(
-                        Math.random() * 4
+                        Math.random() *
+                        4
                     )
                 ];
         }
 
 
         /*
-         * Moving platforms.
+         * Moving platforms don't appear
+         * immediately.
          */
+
+        const movingChance =
+            d < 0.35
+                ? 0
+                : lerp(
+                    0,
+                    0.42,
+                    (
+                        d -
+                        0.35
+                    ) /
+                    0.65
+                );
+
 
         const moving =
             Math.random() <
-            this.movingChance();
+            movingChance;
 
 
         /*
-         * Bonus platform.
-
-         * Rare enough to feel special.
+         * Rare bonus platform.
          */
 
         const bonus =
             Math.random() <
-            0.08;
+            0.07;
 
 
-        this.platforms.push(
+        const platform =
             new Platform(
                 x,
                 this.nextPlatformY,
                 width,
                 moving,
                 bonus
-            )
+            );
+
+
+        this.platforms.push(
+            platform
         );
 
 
         /*
-         * Vertical spacing.
+         * Remember which side this platform
+         * occupied so the next one can generally
+         * appear on the opposite side.
+         */
 
-         * Gets slightly more demanding
-         * with height.
+        if (
+            x <
+            WIDTH * 0.38
+        ) {
+
+            this.lastPlatformSide =
+                "left";
+
+        } else if (
+            x >
+            WIDTH * 0.62
+        ) {
+
+            this.lastPlatformSide =
+                "right";
+
+        } else {
+
+            /*
+             * Center platform doesn't change
+             * the alternating rhythm.
+             */
+        }
+
+
+        /*
+         * Bigger vertical spacing.
+         *
+         * Difficulty makes it gradually larger.
          */
 
         const gap =
             lerp(
-                128,
-                158,
+                MIN_VERTICAL_GAP,
+                MAX_VERTICAL_GAP,
                 d
             ) +
             (
-                Math.random() * 24 -
+                Math.random() *
+                24 -
                 12
             );
 
@@ -1837,14 +1935,14 @@ class Game {
     }
 
 
-    /*
-     * Particles.
-     */
+    /* =====================================================
+       EFFECTS
+    ===================================================== */
 
     addParticles(
         x,
         y,
-        particleColor,
+        c,
         amount,
         power = 1
     ) {
@@ -1859,41 +1957,13 @@ class Game {
                 new Particle(
                     x,
                     y,
-                    particleColor,
+                    c,
                     power
                 )
             );
         }
     }
 
-
-    /*
-     * Floating notification.
-     */
-
-    floatText(
-        x,
-        y,
-        text,
-        textColor,
-        size = 22
-    ) {
-
-        this.floatingTexts.push(
-            new FloatingText(
-                x,
-                y,
-                text,
-                textColor,
-                size
-            )
-        );
-    }
-
-
-    /*
-     * Bounce effects.
-     */
 
     bounceEffect(
         x,
@@ -1916,7 +1986,8 @@ class Game {
 
             this.shake = 7;
 
-            this.flash = 0.10;
+            this.flash =
+                0.12;
 
         } else if (
             type === "edge"
@@ -1933,6 +2004,23 @@ class Game {
             this.shake = 5;
 
         } else if (
+            type === "flow"
+        ) {
+
+            this.addParticles(
+                x,
+                y,
+                [90, 255, 220],
+                30,
+                1.25
+            );
+
+            this.shake = 4;
+
+            this.flash =
+                0.08;
+
+        } else if (
             type === "dive"
         ) {
 
@@ -1946,40 +2034,20 @@ class Game {
 
             this.shake = 6;
 
-        } else if (
-            type === "flow"
-        ) {
-
-            this.addParticles(
-                x,
-                y,
-                [90, 255, 220],
-                28,
-                1.2
-            );
-
-            this.shake = 4;
-
-            this.flash = 0.06;
-
         } else {
 
             this.addParticles(
                 x,
                 y,
                 platform.color,
-                16,
+                18,
                 1
             );
 
-            this.shake = 2;
+            this.shake = 3;
         }
     }
 
-
-    /*
-     * Death effect.
-     */
 
     deathEffect() {
 
@@ -1997,7 +2065,7 @@ class Game {
 
     /* =====================================================
        COLLISION
-       ===================================================== */
+    ===================================================== */
 
     collidePlatform(
         player,
@@ -2009,7 +2077,7 @@ class Game {
 
 
         /*
-         * Closest point on rectangle.
+         * Circle / rectangle collision.
          */
 
         const closestX =
@@ -2026,7 +2094,6 @@ class Game {
                 r.bottom
             );
 
-
         const dx =
             player.x -
             closestX;
@@ -2042,15 +2109,16 @@ class Game {
             player.radius *
             player.radius
         ) {
+
             return false;
         }
 
 
         /*
-         * Penetration depths.
-
-         * These allow us to determine
-         * which face was hit.
+         * Determine which face was hit.
+         *
+         * This means the player cannot simply
+         * fall through the platform.
          */
 
         const leftPen =
@@ -2078,82 +2146,70 @@ class Game {
             );
 
 
-        const minimumPenetration =
-            Math.min(
-                leftPen,
-                rightPen,
-                topPen,
-                bottomPen
-            );
+        const penetrations = [
+
+            {
+                value:
+                    leftPen,
+
+                nx:
+                    -1,
+
+                ny:
+                    0
+            },
+
+            {
+                value:
+                    rightPen,
+
+                nx:
+                    1,
+
+                ny:
+                    0
+            },
+
+            {
+                value:
+                    topPen,
+
+                nx:
+                    0,
+
+                ny:
+                    -1
+            },
+
+            {
+                value:
+                    bottomPen,
+
+                nx:
+                    0,
+
+                ny:
+                    1
+            }
+        ];
 
 
-        let nx = 0;
-        let ny = 0;
+        penetrations.sort(
+            (a, b) =>
+                a.value -
+                b.value
+        );
 
 
-        if (
-            minimumPenetration ===
-            topPen
-        ) {
-
-            nx = 0;
-            ny = -1;
-
-        } else if (
-            minimumPenetration ===
-            bottomPen
-        ) {
-
-            nx = 0;
-            ny = 1;
-
-        } else if (
-            minimumPenetration ===
-            leftPen
-        ) {
-
-            nx = -1;
-            ny = 0;
-
-        } else {
-
-            nx = 1;
-            ny = 0;
-        }
+        const hit =
+            penetrations[0];
 
 
-        /*
-         * Corner detection.
+        const nx =
+            hit.nx;
 
-         * A top landing very close to
-         * either edge counts as a
-         * difficult precision landing.
-         */
-
-        const nearLeft =
-            Math.abs(
-                player.x -
-                r.left
-            ) < 14;
-
-        const nearRight =
-            Math.abs(
-                player.x -
-                r.right
-            ) < 14;
-
-        const nearTop =
-            Math.abs(
-                player.y -
-                r.top
-            ) < 14;
-
-        const isCorner =
-            (
-                nearLeft ||
-                nearRight
-            ) &&
-            nearTop;
+        const ny =
+            hit.ny;
 
 
         /*
@@ -2167,41 +2223,45 @@ class Game {
             player.vy -
             platform.vy;
 
+
         const into =
-            relativeVx * nx +
-            relativeVy * ny;
+            relativeVx *
+                nx +
+            relativeVy *
+                ny;
 
-
-        /*
-         * Already moving away.
-         */
 
         if (
             into >= 0
         ) {
+
             return false;
         }
 
 
         /*
-         * Push the player out
-         * of the platform.
+         * Push player out of platform.
          */
+
+        const penetration =
+            Math.max(
+                hit.value,
+                0
+            );
+
 
         player.x +=
             nx *
-            Math.max(
-                minimumPenetration,
-                0
-            );
+            penetration;
 
         player.y +=
             ny *
-            Math.max(
-                minimumPenetration,
-                0
-            );
+            penetration;
 
+
+        /*
+         * Bounce.
+         */
 
         const result =
             player.bounce(
@@ -2211,18 +2271,34 @@ class Game {
             );
 
 
-        if (!result) {
+        if (
+            !result
+        ) {
+
             return false;
         }
 
 
-        /* -------------------------------------------------
+        /* =================================================
            TOP LANDING
-           ------------------------------------------------- */
+        ================================================= */
 
         if (
-            result.type === "top"
+            result.type ===
+            "top"
         ) {
+
+            /*
+             * Only a TOP landing can score.
+             *
+             * Side and bottom collisions never
+             * create points.
+             */
+
+
+            /*
+             * Detect edge / corner.
+             */
 
             const centerDistance =
                 Math.abs(
@@ -2239,17 +2315,41 @@ class Game {
                 centerDistance;
 
 
+            const nearLeft =
+                Math.abs(
+                    player.x -
+                    r.left
+                ) < 12;
+
+
+            const nearRight =
+                Math.abs(
+                    player.x -
+                    r.right
+                ) < 12;
+
+
+            const nearTop =
+                Math.abs(
+                    player.y -
+                    r.top
+                ) < 12;
+
+
+            const corner =
+                (
+                    nearLeft ||
+                    nearRight
+                ) &&
+                nearTop;
+
+
             let landingType =
                 "normal";
 
 
-            /*
-             * Corner is the rarest
-             * and highest-value landing.
-             */
-
             if (
-                isCorner
+                corner
             ) {
 
                 landingType =
@@ -2266,382 +2366,317 @@ class Game {
 
 
             /*
-             * Base score.
-             */
-
-            let points = 10;
-
-
-            /*
-             * Precision bonuses.
-             */
-
-            if (
-                landingType === "edge"
-            ) {
-
-                points = 25;
-
-                this.floatText(
-                    player.x,
-                    player.y - 30,
-                    "EDGE!",
-                    [255, 215, 80],
-                    20
-                );
-            }
-
-
-            if (
-                landingType === "corner"
-            ) {
-
-                points = 40;
-
-                this.floatText(
-                    player.x,
-                    player.y - 30,
-                    "CORNER!",
-                    [255, 235, 120],
-                    22
-                );
-            }
-
-
-            /*
-             * Dive bonus.
-
-             * Dive is a separate skill.
-             */
-
-            if (
-                result.dive
-            ) {
-
-                points += 30;
-
-                this.floatText(
-                    player.x,
-                    player.y - 35,
-                    "DIVE!",
-                    [255, 105, 150],
-                    19
-                );
-            }
-
-
-            /*
-             * Bonus platform.
-             */
-
-            if (
-                platform.bonus
-            ) {
-
-                points += 50;
-
-                this.floatText(
-                    player.x,
-                    player.y - 55,
-                    "+50",
-                    [255, 225, 90],
-                    20
-                );
-            }
-
-
-            /* -------------------------------------------------
-               FLOW
-               ------------------------------------------------- */
-
-            /*
-             * A clean landing means:
+             * ------------------------------------------------
+             * ANTI-EXPLOIT:
              *
-             * - not a dive
-             * - not a corner
-             * - controlled horizontal speed
+             * This platform has already awarded its
+             * landing points.
              *
-             * Edge landings are still allowed to
-             * continue Flow because they are skillful.
+             * The player can bounce off it again,
+             * but gets ZERO additional score.
+             * ------------------------------------------------
              */
 
-            const clean =
-                !result.dive &&
-                Math.abs(
-                    player.vx
-                ) < 260;
-
-
-            const flowEligible =
-                clean ||
-                landingType === "edge" ||
-                landingType === "corner";
+            const firstLanding =
+                !platform.scoredThisVisit;
 
 
             if (
-                flowEligible
+                firstLanding
             ) {
 
-                this.flow =
-                    clamp(
-                        this.flow + 1,
-                        0,
-                        10
-                    );
-
-            } else {
-
-                this.flow =
-                    Math.max(
-                        0,
-                        this.flow - 1
-                    );
-            }
+                platform.scoredThisVisit =
+                    true;
 
 
-            this.maxFlow =
-                Math.max(
-                    this.maxFlow,
-                    this.flow
-                );
+                /*
+                 * Base points.
+                 *
+                 * The important change:
+                 *
+                 * SCORE IS FOR REACHING NEW
+                 * PLATFORMS, NOT FOR BOUNCING.
+                 */
+
+                let points =
+                    100;
 
 
-            /*
-             * Flow bonus.
+                /*
+                 * Edge landing.
+                 */
 
-             * This is deliberately a bonus,
-             * not a giant score multiplier.
-             */
+                if (
+                    landingType ===
+                    "edge"
+                ) {
 
-            if (
-                this.flow >= 2
-            ) {
+                    points +=
+                        75;
+                }
 
-                const flowBonus =
-                    Math.min(
-                        45,
-                        (
-                            this.flow -
-                            1
-                        ) * 5
-                    );
 
-                points +=
-                    flowBonus;
+                /*
+                 * Corner landing.
+                 */
+
+                if (
+                    landingType ===
+                    "corner"
+                ) {
+
+                    points +=
+                        150;
+                }
+
+
+                /*
+                 * Dive landing.
+                 */
+
+                if (
+                    result.dive
+                ) {
+
+                    points +=
+                        100;
+                }
+
+
+                /*
+                 * Bonus platform.
+                 */
+
+                if (
+                    platform.bonus
+                ) {
+
+                    points +=
+                        250;
+                }
+
+
+                /* -----------------------------------------
+                   FLOW
+                ----------------------------------------- */
+
+                /*
+                 * Clean means:
+                 *
+                 * - top landing
+                 * - not a corner collision
+                 * - controlled horizontal speed
+                 *
+                 * The player is rewarded for making
+                 * smooth consecutive jumps.
+                 */
+
+                const clean =
+                    !corner &&
+                    Math.abs(
+                        player.vx
+                    ) < 360;
 
 
                 if (
-                    this.flow >= 4
+                    clean ||
+                    landingType === "edge" ||
+                    landingType === "corner"
                 ) {
 
-                    this.floatText(
-                        player.x,
-                        player.y - 25,
-                        `FLOW x${this.flow}`,
-                        [90, 255, 220],
-                        19
-                    );
+                    this.flow =
+                        clamp(
+                            this.flow + 1,
+                            0,
+                            10
+                        );
+
+                } else {
+
+                    this.flow =
+                        Math.max(
+                            0,
+                            this.flow - 1
+                        );
                 }
-            }
 
 
-            /*
-             * Fast-climb bonus.
-
-             * Measure actual height gained
-             * between checkpoints.
-             */
-
-            const now =
-                performance.now() /
-                1000;
-
-            const elapsed =
-                Math.max(
-                    0.1,
-                    now -
-                    this.previousHeightTime
-                );
-
-            const heightGained =
-                this.height -
-                this.previousHeight;
-
-            const climbRate =
-                heightGained /
-                elapsed;
-
-
-            if (
-                climbRate > 220 &&
-                this.flow >= 3
-            ) {
-
-                const fastBonus =
-                    Math.min(
-                        100,
-                        Math.floor(
-                            climbRate /
-                            8
-                        )
+                this.maxFlow =
+                    Math.max(
+                        this.maxFlow,
+                        this.flow
                     );
 
-                points +=
-                    fastBonus;
+
+                /*
+                 * Flow multiplier.
+                 *
+                 * This rewards actually progressing
+                 * through multiple platforms.
+                 */
+
+                if (
+                    this.flow >= 2
+                ) {
+
+                    points *=
+                        1 +
+                        (
+                            this.flow -
+                            1
+                        ) *
+                        0.15;
+                }
 
 
-                this.floatText(
+                /*
+                 * Fast climbing bonus.
+                 *
+                 * A clean series of quick hops that
+                 * gains lots of height gets extra points.
+                 */
+
+                const now =
+                    performance.now() /
+                    1000;
+
+                const elapsed =
+                    Math.max(
+                        0.05,
+                        now -
+                        this.lastHeightTime
+                    );
+
+                const gained =
+                    this.height -
+                    this.lastHeight;
+
+                const climbRate =
+                    gained /
+                    elapsed;
+
+
+                if (
+                    climbRate >
+                        250 &&
+                    this.flow >= 3
+                ) {
+
+                    points +=
+                        Math.min(
+                            200,
+                            Math.floor(
+                                climbRate /
+                                8
+                            )
+                        );
+                }
+
+
+                this.score +=
+                    Math.floor(
+                        points
+                    );
+
+
+                /*
+                 * Visual feedback.
+                 */
+
+                let effect =
+                    "normal";
+
+
+                if (
+                    landingType ===
+                    "corner"
+                ) {
+
+                    effect =
+                        "corner";
+
+                } else if (
+                    landingType ===
+                    "edge"
+                ) {
+
+                    effect =
+                        "edge";
+
+                } else if (
+                    result.dive
+                ) {
+
+                    effect =
+                        "dive";
+
+                } else if (
+                    this.flow >= 3
+                ) {
+
+                    effect =
+                        "flow";
+                }
+
+
+                this.bounceEffect(
                     player.x,
-                    player.y - 52,
-                    "FAST CLIMB",
-                    [110, 235, 255],
-                    17
+                    player.y,
+                    platform,
+                    effect
                 );
             }
 
 
             /*
-             * Update climb checkpoint.
+             * IMPORTANT:
+             *
+             * If the player lands on a platform
+             * that was already scored, it still
+             * bounces normally.
+             *
+             * It simply doesn't award score again.
              */
-
-            this.previousHeight =
-                this.height;
-
-            this.previousHeightTime =
-                now;
-
-
-            /*
-             * Add score.
-             */
-
-            this.score +=
-                Math.floor(
-                    points
-                );
-
-
-            /*
-             * Effects.
-             */
-
-            let effectType =
-                "normal";
-
-
-            if (
-                landingType === "corner"
-            ) {
-
-                effectType =
-                    "corner";
-
-            } else if (
-                landingType === "edge"
-            ) {
-
-                effectType =
-                    "edge";
-
-            } else if (
-                result.dive
-            ) {
-
-                effectType =
-                    "dive";
-
-            } else if (
-                this.flow >= 4
-            ) {
-
-                effectType =
-                    "flow";
-            }
-
-
-            this.bounceEffect(
-                player.x,
-                player.y,
-                platform,
-                effectType
-            );
-
 
             return true;
         }
 
 
-        /* -------------------------------------------------
-           SIDE / BOTTOM
-           ------------------------------------------------- */
+        /* =================================================
+           SIDE / BOTTOM COLLISION
+        ================================================= */
 
         /*
-         * These collisions are valid and
-         * remain part of the game.
-
-         * However, they interrupt the clean
-         * upward Flow.
+         * Side and bottom hits still physically
+         * bounce the player.
+         *
+         * But they do NOT give score.
+         *
+         * They also slightly interrupt Flow.
          */
 
-        this.flow = 0;
+        this.flow =
+            Math.max(
+                0,
+                this.flow - 1
+            );
+
 
         this.addParticles(
             player.x,
             player.y,
             platform.color,
-            10,
-            0.8
+            10
         );
+
 
         return true;
     }
 
 
     /* =====================================================
-       CAMERA
-       ===================================================== */
-
-    updateCamera(dt) {
-
-        const screenY =
-            this.player.y +
-            this.cameraY;
-
-
-        if (
-            screenY <
-            CAMERA_TARGET_Y
-        ) {
-
-            const target =
-                CAMERA_TARGET_Y -
-                this.player.y;
-
-
-            this.cameraY =
-                lerp(
-                    this.cameraY,
-                    target,
-                    Math.min(
-                        1,
-                        dt *
-                        CAMERA_FOLLOW_SPEED
-                    )
-                );
-        }
-
-
-        this.cameraY =
-            Math.max(
-                0,
-                this.cameraY
-            );
-    }
-
-
-    /* =====================================================
        UPDATE
-       ===================================================== */
+    ===================================================== */
 
     update(dt) {
 
@@ -2665,7 +2700,7 @@ class Game {
 
 
         /*
-         * Player input.
+         * Player control.
          */
 
         this.player.control(
@@ -2674,7 +2709,10 @@ class Game {
 
 
         /*
-         * Platforms.
+         * Move platforms downward.
+         *
+         * This gives the impression that the player
+         * is climbing upward through the world.
          */
 
         const speed =
@@ -2682,8 +2720,8 @@ class Game {
 
 
         for (
-            const platform
-            of this.platforms
+            const platform of
+            this.platforms
         ) {
 
             platform.update(
@@ -2703,9 +2741,10 @@ class Game {
 
 
         for (
-            let step = 0;
-            step < PHYSICS_STEPS;
-            step++
+            let i = 0;
+            i <
+                PHYSICS_STEPS;
+            i++
         ) {
 
             this.player.gravity(
@@ -2728,30 +2767,33 @@ class Game {
                 this.addParticles(
                     this.player.x,
                     this.player.y,
-                    [70, 220, 255],
-                    10,
-                    0.8
+                    [70,220,255],
+                    12
                 );
 
+
                 /*
-                 * Wall contact interrupts
-                 * Flow because it isn't a
-                 * clean platform ascent.
+                 * Wall bounce isn't a scoring
+                 * event.
+                 *
+                 * It also slightly disrupts flow.
                  */
 
-                this.flow = 0;
+                this.flow =
+                    Math.max(
+                        0,
+                        this.flow - 1
+                    );
             }
 
 
             /*
              * Platforms.
-
-             * Only collide once per substep.
              */
 
             for (
-                const platform
-                of this.platforms
+                const platform of
+                this.platforms
             ) {
 
                 if (
@@ -2760,6 +2802,7 @@ class Game {
                         platform
                     )
                 ) {
+
                     break;
                 }
             }
@@ -2777,9 +2820,6 @@ class Game {
 
         /*
          * Height.
-
-         * Height is measured from the
-         * original starting Y position.
          */
 
         const currentHeight =
@@ -2803,48 +2843,64 @@ class Game {
 
 
         /*
-         * Best records.
-
-         * Save only when a record
-         * actually changes.
+         * Best height.
          */
 
-        if (
-            this.height >
+        this.bestHeight =
+            Math.max(
+                this.bestHeight,
+                this.height
+            );
+
+
+        /*
+         * Best score.
+         */
+
+        this.bestScore =
+            Math.max(
+                this.bestScore,
+                this.score
+            );
+
+
+        localStorage.setItem(
+            "bounceBestHeight",
             this.bestHeight
+        );
+
+        localStorage.setItem(
+            "bounceBestScore",
+            this.bestScore
+        );
+
+
+        /*
+         * Height tracking for fast-climb
+         * scoring.
+         */
+
+        const now =
+            performance.now() /
+            1000;
+
+
+        if (
+            now -
+            this.lastHeightTime >
+            0.35
         ) {
 
-            this.bestHeight =
+            this.lastHeight =
                 this.height;
 
-            localStorage.setItem(
-                "bounceBestHeight",
-                String(
-                    this.bestHeight
-                )
-            );
-        }
-
-
-        if (
-            this.score >
-            this.bestScore
-        ) {
-
-            this.bestScore =
-                this.score;
-
-            localStorage.setItem(
-                "bounceBestScore",
-                String(
-                    this.bestScore
-                )
-            );
+            this.lastHeightTime =
+                now;
         }
 
 
         /*
-         * Platform spawning.
+         * Spawn new platforms.
          */
 
         this.spawnTimer +=
@@ -2883,18 +2939,15 @@ class Game {
 
         /*
          * Death.
-
-         * Give the player a little
-         * forgiveness below the screen.
          */
 
-        const playerScreenY =
+        const screenY =
             this.player.y +
             this.cameraY;
 
 
         if (
-            playerScreenY >
+            screenY >
             HEIGHT + 70
         ) {
 
@@ -2910,10 +2963,6 @@ class Game {
             dt
         );
 
-        this.updateFloatingTexts(
-            dt
-        );
-
         this.player.updateVisuals();
 
 
@@ -2924,6 +2973,7 @@ class Game {
                 dt * 20
             );
 
+
         this.flash =
             Math.max(
                 0,
@@ -2932,6 +2982,52 @@ class Game {
             );
     }
 
+
+    /* =====================================================
+       CAMERA
+    ===================================================== */
+
+    updateCamera(dt) {
+
+        const screenY =
+            this.player.y +
+            this.cameraY;
+
+
+        if (
+            screenY <
+            CAMERA_TARGET_Y
+        ) {
+
+            const target =
+                CAMERA_TARGET_Y -
+                this.player.y;
+
+
+            this.cameraY =
+                lerp(
+                    this.cameraY,
+                    target,
+                    Math.min(
+                        1,
+                        dt *
+                        CAMERA_FOLLOW_SPEED
+                    )
+                );
+        }
+
+
+        this.cameraY =
+            Math.max(
+                this.cameraY,
+                0
+            );
+    }
+
+
+    /* =====================================================
+       PARTICLES
+    ===================================================== */
 
     updateParticles(dt) {
 
@@ -2962,87 +3058,48 @@ class Game {
     }
 
 
-    updateFloatingTexts(dt) {
-
-        for (
-            let i =
-                this.floatingTexts.length - 1;
-            i >= 0;
-            i--
-        ) {
-
-            const text =
-                this.floatingTexts[i];
-
-            text.update(
-                dt
-            );
-
-            if (
-                text.life <= 0
-            ) {
-
-                this.floatingTexts.splice(
-                    i,
-                    1
-                );
-            }
-        }
-    }
-
-
     /* =====================================================
        DEATH
-       ===================================================== */
+    ===================================================== */
 
     die() {
 
         if (
             this.gameOver
         ) {
+
             return;
         }
 
 
-        this.gameOver = true;
+        this.gameOver =
+            true;
 
 
-        /*
-         * Final records.
-         */
+        this.bestScore =
+            Math.max(
+                this.bestScore,
+                this.score
+            );
 
-        if (
-            this.score >
+
+        this.bestHeight =
+            Math.max(
+                this.bestHeight,
+                this.height
+            );
+
+
+        localStorage.setItem(
+            "bounceBestScore",
             this.bestScore
-        ) {
-
-            this.bestScore =
-                this.score;
-
-            localStorage.setItem(
-                "bounceBestScore",
-                String(
-                    this.bestScore
-                )
-            );
-        }
+        );
 
 
-        if (
-            this.height >
+        localStorage.setItem(
+            "bounceBestHeight",
             this.bestHeight
-        ) {
-
-            this.bestHeight =
-                this.height;
-
-            localStorage.setItem(
-                "bounceBestHeight",
-                String(
-                    this.bestHeight
-                )
-            );
-        }
+        );
 
 
         this.deathEffect();
@@ -3051,9 +3108,9 @@ class Game {
 
     /* =====================================================
        BACKGROUND
-       ===================================================== */
+    ===================================================== */
 
-    drawBackground() {
+    background() {
 
         const gradient =
             ctx.createLinearGradient(
@@ -3078,6 +3135,7 @@ class Game {
         ctx.fillStyle =
             gradient;
 
+
         ctx.fillRect(
             0,
             0,
@@ -3087,31 +3145,33 @@ class Game {
 
 
         /*
-         * Simple stars.
-
-         * Deterministic positions so
-         * they don't jump every frame.
+         * Stars.
          */
 
         for (
             let i = 0;
-            i < 75;
+            i < 70;
             i++
         ) {
 
             const x =
                 (
-                    i * 83
-                ) % WIDTH;
+                    i *
+                    83
+                ) %
+                WIDTH;
+
 
             const y =
                 (
-                    i * 137 +
+                    i *
+                    137 +
                     Math.floor(
                         this.cameraY *
                         0.15
                     )
-                ) % HEIGHT;
+                ) %
+                HEIGHT;
 
 
             ctx.fillStyle =
@@ -3129,10 +3189,38 @@ class Game {
 
 
     /* =====================================================
-       HUD
-       ===================================================== */
+       TEXT
+    ===================================================== */
 
-    drawHUD() {
+    textCentered(
+        text,
+        y,
+        size,
+        c
+    ) {
+
+        ctx.font =
+            `${size}px Arial`;
+
+        ctx.fillStyle =
+            color(c);
+
+        ctx.textAlign =
+            "center";
+
+        ctx.fillText(
+            text,
+            WIDTH / 2,
+            y
+        );
+    }
+
+
+    /* =====================================================
+       HUD
+    ===================================================== */
+
+    hud() {
 
         ctx.textAlign =
             "center";
@@ -3156,7 +3244,7 @@ class Game {
 
 
         ctx.font =
-            "15px Arial";
+            "16px Arial";
 
         ctx.fillStyle =
             "rgba(160,180,200,0.9)";
@@ -3164,7 +3252,7 @@ class Game {
         ctx.fillText(
             "SCORE",
             WIDTH / 2,
-            69
+            70
         );
 
 
@@ -3173,22 +3261,22 @@ class Game {
          */
 
         ctx.font =
-            "bold 21px Arial";
+            "bold 20px Arial";
 
         ctx.fillStyle =
             "rgba(220,235,250,0.95)";
 
         ctx.fillText(
-            `HEIGHT  ${this.height.toLocaleString()}`,
+            `HEIGHT  ${
+                this.height.toLocaleString()
+            }`,
             WIDTH / 2,
-            99
+            100
         );
 
 
         /*
          * Flow.
-
-         * Only display it when active.
          */
 
         if (
@@ -3197,7 +3285,6 @@ class Game {
 
             ctx.font =
                 "bold 23px Arial";
-
 
             ctx.fillStyle =
                 this.flow >= 7
@@ -3241,9 +3328,9 @@ class Game {
 
     /* =====================================================
        START SCREEN
-       ===================================================== */
+    ===================================================== */
 
-    drawStartScreen() {
+    startScreen() {
 
         ctx.fillStyle =
             "rgba(0,0,0,0.12)";
@@ -3256,91 +3343,63 @@ class Game {
         );
 
 
-        ctx.textAlign =
-            "center";
-
-
-        ctx.font =
-            "bold 66px Arial";
-
-        ctx.fillStyle =
-            color(WHITE);
-
-        ctx.fillText(
+        this.textCentered(
             "BOUNCE",
-            WIDTH / 2,
-            300
+            300,
+            66,
+            WHITE
         );
 
 
-        ctx.font =
-            "bold 25px Arial";
-
-        ctx.fillStyle =
-            "#46dcff";
-
-        ctx.fillText(
+        this.textCentered(
             "DRAG LEFT / RIGHT",
-            WIDTH / 2,
-            390
+            390,
+            25,
+            [70,220,255]
         );
 
 
-        ctx.font =
-            "16px Arial";
+        this.textCentered(
+            "CROSS THE SCREEN TO REACH THE NEXT PLATFORM",
+            425,
+            15,
+            [180,195,210]
+        );
 
-        ctx.fillStyle =
-            "#ff7896";
 
-        ctx.fillText(
+        this.textCentered(
             "DRAG DOWN WHILE FALLING TO DIVE",
-            WIDTH / 2,
-            430
+            465,
+            16,
+            [255,120,150]
         );
 
 
-        ctx.font =
-            "17px Arial";
-
-        ctx.fillStyle =
-            "#a0afbf";
-
-        ctx.fillText(
+        this.textCentered(
             "Clean landings build FLOW.",
-            WIDTH / 2,
-            485
+            510,
+            17,
+            [150,165,185]
         );
 
 
-        ctx.fillText(
-            "Edge and corner landings score more.",
-            WIDTH / 2,
-            512
-        );
-
-
-        ctx.font =
-            "bold 20px Arial";
-
-        ctx.fillStyle =
-            "#e0e8f0";
-
-        ctx.fillText(
+        this.textCentered(
             "TAP TO START",
-            WIDTH / 2,
-            570
+            575,
+            20,
+            [220,230,240]
         );
     }
 
 
     /* =====================================================
-       GAME OVER SCREEN
-       ===================================================== */
+       GAME OVER
+    ===================================================== */
 
-    drawGameOverScreen() {
+    gameOverScreen() {
 
         ctx.fillStyle =
-            "rgba(0,0,0,0.72)";
+            "rgba(0,0,0,0.68)";
 
         ctx.fillRect(
             0,
@@ -3350,203 +3409,110 @@ class Game {
         );
 
 
-        ctx.textAlign =
-            "center";
-
-
-        /*
-         * Title.
-         */
-
-        ctx.font =
-            "bold 56px Arial";
-
-        ctx.fillStyle =
-            color(WHITE);
-
-        ctx.fillText(
+        this.textCentered(
             "GAME OVER",
-            WIDTH / 2,
-            265
+            270,
+            56,
+            WHITE
         );
 
 
-        /*
-         * Score.
-         */
-
-        ctx.font =
-            "bold 43px Arial";
-
-        ctx.fillStyle =
-            "#46dcff";
-
-        ctx.fillText(
+        this.textCentered(
             this.score.toLocaleString(),
-            WIDTH / 2,
-            340
+            345,
+            42,
+            [70,220,255]
         );
 
 
-        ctx.font =
-            "15px Arial";
-
-        ctx.fillStyle =
-            "#91a4b8";
-
-        ctx.fillText(
+        this.textCentered(
             "SCORE",
-            WIDTH / 2,
-            365
+            370,
+            15,
+            [145,165,185]
         );
 
 
-        /*
-         * Height.
-
-         * This is deliberately prominent.
-         */
-
-        ctx.font =
-            "bold 36px Arial";
-
-        ctx.fillStyle =
-            color(WHITE);
-
-        ctx.fillText(
+        this.textCentered(
             this.height.toLocaleString(),
-            WIDTH / 2,
-            425
+            430,
+            34,
+            WHITE
         );
 
 
-        ctx.font =
-            "15px Arial";
-
-        ctx.fillStyle =
-            "#91a4b8";
-
-        ctx.fillText(
+        this.textCentered(
             "HEIGHT",
-            WIDTH / 2,
-            450
+            452,
+            15,
+            [145,165,185]
         );
 
 
-        /*
-         * Best score.
-         */
-
-        ctx.font =
-            "bold 25px Arial";
-
-        ctx.fillStyle =
-            "#c2ccd8";
-
-        ctx.fillText(
+        this.textCentered(
             this.bestScore.toLocaleString(),
-            WIDTH / 2,
-            505
+            505,
+            25,
+            [190,200,215]
         );
 
 
-        ctx.font =
-            "14px Arial";
-
-        ctx.fillStyle =
-            "#7d91a5";
-
-        ctx.fillText(
+        this.textCentered(
             "BEST SCORE",
-            WIDTH / 2,
-            526
+            526,
+            14,
+            [125,145,165]
         );
 
 
-        /*
-         * Best height.
-         */
-
-        ctx.font =
-            "bold 27px Arial";
-
-        ctx.fillStyle =
-            "#c2ccd8";
-
-        ctx.fillText(
+        this.textCentered(
             this.bestHeight.toLocaleString(),
-            WIDTH / 2,
-            570
+            570,
+            25,
+            [190,200,215]
         );
 
 
-        ctx.font =
-            "14px Arial";
-
-        ctx.fillStyle =
-            "#7d91a5";
-
-        ctx.fillText(
+        this.textCentered(
             "BEST HEIGHT",
-            WIDTH / 2,
-            591
+            591,
+            14,
+            [125,145,165]
         );
 
 
-        /*
-         * Flow.
-         */
-
-        ctx.font =
-            "bold 20px Arial";
-
-        ctx.fillStyle =
-            "#62f5d0";
-
-        ctx.fillText(
+        this.textCentered(
             `MAX FLOW x${this.maxFlow}`,
-            WIDTH / 2,
-            640
+            640,
+            20,
+            [98,245,208]
         );
 
 
-        /*
-         * Retry.
-         */
-
-        ctx.font =
-            "bold 18px Arial";
-
-        ctx.fillStyle =
-            color(WHITE);
-
-        ctx.fillText(
+        this.textCentered(
             "TAP ANYWHERE TO RETRY",
-            WIDTH / 2,
-            705
+            700,
+            18,
+            WHITE
         );
     }
 
 
     /* =====================================================
        DRAW
-       ===================================================== */
+    ===================================================== */
 
     draw() {
 
-        ctx.clearRect(
-            0,
-            0,
-            WIDTH,
-            HEIGHT
+        ctx.save();
+
+        ctx.scale(
+            scale,
+            scale
         );
 
 
-        /*
-         * Background.
-         */
-
-        this.drawBackground();
+        this.background();
 
 
         /*
@@ -3554,8 +3520,8 @@ class Game {
          */
 
         for (
-            const platform
-            of this.platforms
+            const platform of
+            this.platforms
         ) {
 
             platform.draw(
@@ -3569,26 +3535,11 @@ class Game {
          */
 
         for (
-            const particle
-            of this.particles
+            const particle of
+            this.particles
         ) {
 
             particle.draw(
-                this.cameraY
-            );
-        }
-
-
-        /*
-         * Floating scoring text.
-         */
-
-        for (
-            const floatingText
-            of this.floatingTexts
-        ) {
-
-            floatingText.draw(
                 this.cameraY
             );
         }
@@ -3611,7 +3562,7 @@ class Game {
             this.started
         ) {
 
-            this.drawHUD();
+            this.hud();
         }
 
 
@@ -3623,7 +3574,7 @@ class Game {
             !this.started
         ) {
 
-            this.drawStartScreen();
+            this.startScreen();
         }
 
 
@@ -3635,12 +3586,12 @@ class Game {
             this.gameOver
         ) {
 
-            this.drawGameOverScreen();
+            this.gameOverScreen();
         }
 
 
         /*
-         * Flash.
+         * Landing flash.
          */
 
         if (
@@ -3648,12 +3599,9 @@ class Game {
         ) {
 
             ctx.fillStyle =
-                `rgba(
-                    255,
-                    255,
-                    255,
-                    ${this.flash}
-                )`;
+                `rgba(255,255,255,${
+                    this.flash
+                })`;
 
             ctx.fillRect(
                 0,
@@ -3662,39 +3610,41 @@ class Game {
                 HEIGHT
             );
         }
+
+
+        ctx.restore();
     }
 }
 
 
 /* =========================================================
-   START GAME
-   ========================================================= */
+   GAME LOOP
+========================================================= */
 
 const game =
     new Game();
-
-
-/* =========================================================
-   GAME LOOP
-   ========================================================= */
 
 let lastTime =
     performance.now();
 
 
-function gameLoop(now) {
+function loop(now) {
 
     let dt =
-        (now - lastTime) /
+        (
+            now -
+            lastTime
+        ) /
         1000;
+
 
     lastTime =
         now;
 
 
     /*
-     * Prevent giant physics steps
-     * if the phone pauses briefly.
+     * Prevent huge physics jumps if
+     * the browser pauses the game.
      */
 
     dt =
@@ -3711,25 +3661,25 @@ function gameLoop(now) {
 
     /*
      * Screen shake.
-
-     * The actual game coordinates
-     * remain 480 × 800.
      */
 
     if (
         game.shake > 0
     ) {
 
-        const shakeX =
+        const sx =
             (
-                Math.random() * 2 -
+                Math.random() *
+                2 -
                 1
             ) *
             game.shake;
 
-        const shakeY =
+
+        const sy =
             (
-                Math.random() * 2 -
+                Math.random() *
+                2 -
                 1
             ) *
             game.shake;
@@ -3737,12 +3687,15 @@ function gameLoop(now) {
 
         ctx.save();
 
+
         ctx.translate(
-            shakeX,
-            shakeY
+            sx * scale,
+            sy * scale
         );
 
+
         game.draw();
+
 
         ctx.restore();
 
@@ -3753,15 +3706,14 @@ function gameLoop(now) {
 
 
     requestAnimationFrame(
-        gameLoop
+        loop
     );
 }
 
 
 requestAnimationFrame(
-    gameLoop
+    loop
 );
-
 </script>
 
 </body>
