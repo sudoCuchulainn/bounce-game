@@ -26,7 +26,7 @@ body {
 
     overflow: hidden;
 
-    background: #070a14;
+    background: #050811;
 
     touch-action: none;
     user-select: none;
@@ -59,11 +59,26 @@ body {
 
 /* =========================================================
    BOUNCE
+   =========================================================
+
+   Core systems:
+
+   - Alternating left/right platform rhythm
+   - Gradual difficulty
+   - Glowing collectible orbs
+   - Rainbow LIFELINE safety net
+   - Animated green death flames
+   - Swipe-down diving
+   - Haptic feedback where supported
+   - Flow / combo system
+   - Moving platforms later in the run
+
    ========================================================= */
 
-/* ---------------------------------------------------------
+
+/* =========================================================
    CANVAS
---------------------------------------------------------- */
+========================================================= */
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -99,8 +114,8 @@ resize();
 
 
 /* =========================================================
-   SETTINGS
-   ========================================================= */
+   COLORS
+========================================================= */
 
 const WHITE = [245, 250, 255];
 
@@ -117,9 +132,9 @@ const PLATFORM_DARK = [25, 45, 70];
 const PLATFORM_HIGHLIGHT = [180, 245, 255];
 
 
-/* ---------------------------------------------------------
+/* =========================================================
    PLAYER PHYSICS
---------------------------------------------------------- */
+========================================================= */
 
 const GRAVITY = 1500;
 
@@ -146,52 +161,74 @@ const BALL_RADIUS = 17;
 const PHYSICS_STEPS = 6;
 
 
-/* ---------------------------------------------------------
+/* =========================================================
    PLATFORM GENERATION
---------------------------------------------------------- */
+========================================================= */
 
 const CELL = 34;
 
 /*
- * This is intentionally much larger than before.
+ * The beginning is intentionally forgiving.
  *
- * The game should feel like:
- *
- * LEFT
- *       platform
- *
- *                         RIGHT
- * 
- * LEFT
- *
- *                         RIGHT
- *
- * rather than a pile of platforms.
+ * Difficulty grows as the player climbs.
  */
 
-const MIN_VERTICAL_GAP = 155;
+const START_VERTICAL_GAP = 108;
+const END_VERTICAL_GAP = 190;
 
-const MAX_VERTICAL_GAP = 190;
+const START_HORIZONTAL_REACH = 145;
+const END_HORIZONTAL_REACH = 390;
 
 const PLATFORM_SIDE_MARGIN = 55;
 
 
-/* ---------------------------------------------------------
+/* =========================================================
    CAMERA
---------------------------------------------------------- */
+========================================================= */
 
 const CAMERA_TARGET_Y = 330;
-
 const CAMERA_FOLLOW_SPEED = 7;
 
 
-/* ---------------------------------------------------------
+/* =========================================================
    PLATFORM MOVEMENT
---------------------------------------------------------- */
+========================================================= */
 
 const SPAWN_INTERVAL = 0.45;
-
 const DESPAWN_DISTANCE = 250;
+
+
+/* =========================================================
+   ORBS
+========================================================= */
+
+const ORB_TYPES = {
+
+    FLOW: "flow",
+
+    GOLD: "gold",
+
+    DIVE: "dive",
+
+    LIFELINE: "lifeline"
+};
+
+
+/*
+ * How long the Lifeline lasts.
+ */
+
+const LIFELINE_DURATION = 8;
+
+
+/* =========================================================
+   DEATH FLAMES
+========================================================= */
+
+const FLAME_HEIGHT = 44;
+
+const FLAME_DANGER_Y =
+    HEIGHT - FLAME_HEIGHT;
 
 
 /* =========================================================
@@ -210,6 +247,141 @@ let touchStartY = 0;
 let touchX = 0;
 let touchY = 0;
 
+let touchMoved = false;
+
+
+/* =========================================================
+   HAPTICS
+========================================================= */
+
+function vibrate(pattern) {
+
+    if (
+        "vibrate" in navigator
+    ) {
+
+        try {
+
+            navigator.vibrate(
+                pattern
+            );
+
+        } catch (error) {
+            /*
+             * Haptics are optional.
+             */
+        }
+    }
+}
+
+
+/* =========================================================
+   AUDIO
+========================================================= */
+
+let audioContext = null;
+
+function initializeAudio() {
+
+    if (
+        audioContext
+    ) {
+        return;
+    }
+
+    try {
+
+        const AudioContext =
+            window.AudioContext ||
+            window.webkitAudioContext;
+
+        if (
+            AudioContext
+        ) {
+
+            audioContext =
+                new AudioContext();
+        }
+
+    } catch (error) {
+
+        audioContext = null;
+    }
+}
+
+
+function beep(
+    frequency,
+    duration,
+    volume = 0.035,
+    type = "sine"
+) {
+
+    if (
+        !audioContext
+    ) {
+        return;
+    }
+
+    try {
+
+        if (
+            audioContext.state ===
+            "suspended"
+        ) {
+
+            audioContext.resume();
+        }
+
+        const oscillator =
+            audioContext.createOscillator();
+
+        const gain =
+            audioContext.createGain();
+
+        oscillator.type =
+            type;
+
+        oscillator.frequency.value =
+            frequency;
+
+        gain.gain.setValueAtTime(
+            volume,
+            audioContext.currentTime
+        );
+
+        gain.gain.exponentialRampToValueAtTime(
+            0.001,
+            audioContext.currentTime +
+            duration
+        );
+
+        oscillator.connect(
+            gain
+        );
+
+        gain.connect(
+            audioContext.destination
+        );
+
+        oscillator.start();
+
+        oscillator.stop(
+            audioContext.currentTime +
+            duration
+        );
+
+    } catch (error) {
+        /*
+         * Audio is optional.
+         */
+    }
+}
+
+
+/* =========================================================
+   POINTER POSITION
+========================================================= */
 
 function pointerPosition(event) {
 
@@ -217,20 +389,25 @@ function pointerPosition(event) {
         canvas.getBoundingClientRect();
 
     return {
+
         x:
-            (event.clientX - rect.left)
-            / scale,
+            (
+                event.clientX -
+                rect.left
+            ) / scale,
 
         y:
-            (event.clientY - rect.top)
-            / scale
+            (
+                event.clientY -
+                rect.top
+            ) / scale
     };
 }
 
 
-/* ---------------------------------------------------------
+/* =========================================================
    TOUCH
---------------------------------------------------------- */
+========================================================= */
 
 canvas.addEventListener(
     "pointerdown",
@@ -238,16 +415,21 @@ canvas.addEventListener(
 
         event.preventDefault();
 
+        initializeAudio();
+
         const p =
             pointerPosition(event);
 
         touchActive = true;
+
+        touchMoved = false;
 
         touchStartX = p.x;
         touchStartY = p.y;
 
         touchX = p.x;
         touchY = p.y;
+
 
         if (
             !game.started ||
@@ -264,7 +446,9 @@ canvas.addEventListener(
     "pointermove",
     event => {
 
-        if (!touchActive) {
+        if (
+            !touchActive
+        ) {
             return;
         }
 
@@ -275,6 +459,20 @@ canvas.addEventListener(
 
         touchX = p.x;
         touchY = p.y;
+
+        if (
+            Math.abs(
+                touchX -
+                touchStartX
+            ) > 8 ||
+            Math.abs(
+                touchY -
+                touchStartY
+            ) > 8
+        ) {
+
+            touchMoved = true;
+        }
     }
 );
 
@@ -286,6 +484,8 @@ canvas.addEventListener(
         event.preventDefault();
 
         touchActive = false;
+
+        touchMoved = false;
     }
 );
 
@@ -295,17 +495,21 @@ canvas.addEventListener(
     () => {
 
         touchActive = false;
+
+        touchMoved = false;
     }
 );
 
 
-/* ---------------------------------------------------------
+/* =========================================================
    KEYBOARD
---------------------------------------------------------- */
+========================================================= */
 
 window.addEventListener(
     "keydown",
     event => {
+
+        initializeAudio();
 
         if (
             event.key === "ArrowLeft" ||
@@ -410,7 +614,9 @@ function lerp(
 ) {
 
     return a +
-        (b - a) *
+        (
+            b - a
+        ) *
         amount;
 }
 
@@ -430,8 +636,28 @@ function rgba(
 }
 
 
+function distance(
+    x1,
+    y1,
+    x2,
+    y2
+) {
+
+    const dx =
+        x1 - x2;
+
+    const dy =
+        y1 - y2;
+
+    return Math.sqrt(
+        dx * dx +
+        dy * dy
+    );
+}
+
+
 /* =========================================================
-   PARTICLES
+   PARTICLE
 ========================================================= */
 
 class Particle {
@@ -548,6 +774,518 @@ class Particle {
 
 
 /* =========================================================
+   ORB PARTICLE
+========================================================= */
+
+class OrbParticle {
+
+    constructor(
+        orb
+    ) {
+
+        this.orb = orb;
+
+        this.angle =
+            Math.random() *
+            Math.PI *
+            2;
+
+        this.radius =
+            16 +
+            Math.random() *
+            13;
+
+        this.speed =
+            1 +
+            Math.random() *
+            2;
+
+        this.life =
+            1;
+    }
+
+
+    update(dt) {
+
+        this.angle +=
+            this.speed *
+            dt;
+
+        this.life -=
+            dt *
+            0.5;
+    }
+
+
+    draw(cameraY) {
+
+        if (
+            this.life <= 0
+        ) {
+
+            return;
+        }
+
+        const x =
+            this.orb.x +
+            Math.cos(
+                this.angle
+            ) *
+            this.radius;
+
+        const y =
+            this.orb.y +
+            Math.sin(
+                this.angle
+            ) *
+            this.radius +
+            cameraY;
+
+        ctx.fillStyle =
+            rgba(
+                this.orb.primaryColor(),
+                0.75
+            );
+
+        ctx.beginPath();
+
+        ctx.arc(
+            x,
+            y,
+            2,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fill();
+    }
+}
+
+
+/* =========================================================
+   ORB
+========================================================= */
+
+class Orb {
+
+    constructor(
+        x,
+        y,
+        type
+    ) {
+
+        this.x = x;
+        this.y = y;
+
+        this.type = type;
+
+        this.radius = 13;
+
+        this.phase =
+            Math.random() *
+            Math.PI *
+            2;
+
+        this.age = 0;
+
+        this.collected = false;
+
+        this.particles = [];
+
+
+        for (
+            let i = 0;
+            i < 5;
+            i++
+        ) {
+
+            this.particles.push(
+                new OrbParticle(
+                    this
+                )
+            );
+        }
+    }
+
+
+    update(dt) {
+
+        this.age += dt;
+
+        for (
+            const particle of
+            this.particles
+        ) {
+
+            particle.update(
+                dt
+            );
+        }
+    }
+
+
+    primaryColor() {
+
+        if (
+            this.type ===
+            ORB_TYPES.FLOW
+        ) {
+
+            return [
+                70,
+                245,
+                220
+            ];
+        }
+
+        if (
+            this.type ===
+            ORB_TYPES.GOLD
+        ) {
+
+            return [
+                255,
+                215,
+                65
+            ];
+        }
+
+        if (
+            this.type ===
+            ORB_TYPES.DIVE
+        ) {
+
+            return [
+                255,
+                95,
+                145
+            ];
+        }
+
+        return [
+            255,
+            100,
+            220
+        ];
+    }
+
+
+    rainbowColor() {
+
+        const hue =
+            (
+                this.age *
+                110
+            ) %
+            360;
+
+        return hslToRgb(
+            hue,
+            100,
+            65
+        );
+    }
+
+
+    draw(cameraY) {
+
+        if (
+            this.collected
+        ) {
+
+            return;
+        }
+
+        const bob =
+            Math.sin(
+                this.age *
+                3 +
+                this.phase
+            ) *
+            4;
+
+        const sx =
+            this.x;
+
+        const sy =
+            this.y +
+            cameraY +
+            bob;
+
+
+        /*
+         * Orbiting particles.
+         */
+
+        for (
+            const particle of
+            this.particles
+        ) {
+
+            particle.draw(
+                cameraY + bob
+            );
+        }
+
+
+        /*
+         * Outer glow.
+         */
+
+        let glowColor;
+
+        if (
+            this.type ===
+            ORB_TYPES.LIFELINE
+        ) {
+
+            glowColor =
+                `hsla(${
+                    (
+                        this.age *
+                        110
+                    ) % 360
+                },100%,65%,0.7)`;
+
+        } else {
+
+            glowColor =
+                rgba(
+                    this.primaryColor(),
+                    0.55
+                );
+        }
+
+
+        ctx.shadowBlur = 28;
+        ctx.shadowColor =
+            glowColor;
+
+
+        /*
+         * Main orb.
+         */
+
+        if (
+            this.type ===
+            ORB_TYPES.LIFELINE
+        ) {
+
+            const gradient =
+                ctx.createRadialGradient(
+                    sx - 4,
+                    sy - 4,
+                    1,
+                    sx,
+                    sy,
+                    this.radius
+                );
+
+            gradient.addColorStop(
+                0,
+                "#ffffff"
+            );
+
+            gradient.addColorStop(
+                0.25,
+                `hsl(${
+                    (
+                        this.age *
+                        110
+                    ) % 360
+                },100%,85%)`
+            );
+
+            gradient.addColorStop(
+                0.65,
+                `hsl(${
+                    (
+                        this.age *
+                        110 +
+                        120
+                    ) % 360
+                },100%,65%)`
+            );
+
+            gradient.addColorStop(
+                1,
+                `hsl(${
+                    (
+                        this.age *
+                        110 +
+                        240
+                    ) % 360
+                },100%,55%)`
+            );
+
+            ctx.fillStyle =
+                gradient;
+
+        } else {
+
+            const c =
+                this.primaryColor();
+
+            const gradient =
+                ctx.createRadialGradient(
+                    sx - 4,
+                    sy - 4,
+                    1,
+                    sx,
+                    sy,
+                    this.radius
+                );
+
+            gradient.addColorStop(
+                0,
+                "#ffffff"
+            );
+
+            gradient.addColorStop(
+                0.3,
+                color(c)
+            );
+
+            gradient.addColorStop(
+                1,
+                rgba(c, 0.5)
+            );
+
+            ctx.fillStyle =
+                gradient;
+        }
+
+
+        ctx.beginPath();
+
+        ctx.arc(
+            sx,
+            sy,
+            this.radius,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fill();
+
+
+        ctx.shadowBlur = 0;
+
+
+        /*
+         * Inner highlight.
+         */
+
+        ctx.fillStyle =
+            "rgba(255,255,255,0.85)";
+
+        ctx.beginPath();
+
+        ctx.arc(
+            sx - 4,
+            sy - 4,
+            3,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fill();
+
+
+        /*
+         * Special icon.
+         */
+
+        ctx.strokeStyle =
+            "rgba(255,255,255,0.85)";
+
+        ctx.lineWidth = 2;
+
+
+        if (
+            this.type ===
+            ORB_TYPES.LIFELINE
+        ) {
+
+            /*
+             * Small shield shape.
+             */
+
+            ctx.beginPath();
+
+            ctx.moveTo(
+                sx,
+                sy - 7
+            );
+
+            ctx.lineTo(
+                sx + 6,
+                sy - 3
+            );
+
+            ctx.lineTo(
+                sx + 5,
+                sy + 4
+            );
+
+            ctx.lineTo(
+                sx,
+                sy + 8
+            );
+
+            ctx.lineTo(
+                sx - 5,
+                sy + 4
+            );
+
+            ctx.lineTo(
+                sx - 6,
+                sy - 3
+            );
+
+            ctx.closePath();
+
+            ctx.stroke();
+
+        } else if (
+            this.type ===
+            ORB_TYPES.DIVE
+        ) {
+
+            ctx.beginPath();
+
+            ctx.moveTo(
+                sx,
+                sy - 7
+            );
+
+            ctx.lineTo(
+                sx,
+                sy + 5
+            );
+
+            ctx.moveTo(
+                sx - 4,
+                sy + 1
+            );
+
+            ctx.lineTo(
+                sx,
+                sy + 6
+            );
+
+            ctx.lineTo(
+                sx + 4,
+                sy + 1
+            );
+
+            ctx.stroke();
+        }
+    }
+}
+
+
+/* =========================================================
    PLATFORM
 ========================================================= */
 
@@ -607,23 +1345,13 @@ class Platform {
                     )
                 ];
 
-        /*
-         * IMPORTANT:
-         *
-         * A platform only gives its landing
-         * points once.
-         *
-         * The player can bounce off it again,
-         * but it won't generate another
-         * score event until the player lands
-         * on a different platform.
-         */
-
         this.scoredThisVisit =
             false;
 
         this.id =
             Platform.nextId++;
+
+        this.orb = null;
     }
 
 
@@ -703,6 +1431,18 @@ class Platform {
                     );
             }
         }
+
+        if (
+            this.orb
+        ) {
+
+            this.orb.x =
+                this.x;
+
+            this.orb.y =
+                this.y -
+                55;
+        }
     }
 
 
@@ -725,6 +1465,11 @@ class Platform {
             return;
         }
 
+
+        /*
+         * Shadow.
+         */
+
         ctx.fillStyle =
             color(
                 PLATFORM_DARK
@@ -738,6 +1483,11 @@ class Platform {
             7
         );
 
+
+        /*
+         * Main platform.
+         */
+
         ctx.fillStyle =
             color(
                 this.color
@@ -750,6 +1500,11 @@ class Platform {
             CELL,
             7
         );
+
+
+        /*
+         * Top highlight.
+         */
 
         ctx.strokeStyle =
             color(
@@ -832,28 +1587,6 @@ class Platform {
 Platform.nextId = 1;
 
 
-function roundRect(
-    x,
-    y,
-    width,
-    height,
-    radius
-) {
-
-    ctx.beginPath();
-
-    ctx.roundRect(
-        x,
-        y,
-        width,
-        height,
-        radius
-    );
-
-    ctx.fill();
-}
-
-
 /* =========================================================
    PLAYER
 ========================================================= */
@@ -892,6 +1625,10 @@ class Player {
         this.diving = false;
 
         this.lastPlatform = null;
+
+        this.lifelineTimer = 0;
+
+        this.savedRecently = 0;
     }
 
 
@@ -904,21 +1641,23 @@ class Player {
          * Keyboard.
          */
 
-        if (keyLeft) {
+        if (
+            keyLeft
+        ) {
+
             direction--;
         }
 
-        if (keyRight) {
+        if (
+            keyRight
+        ) {
+
             direction++;
         }
 
 
         /*
-         * Touch.
-         *
-         * Horizontal distance from the starting
-         * point determines how strongly the player
-         * moves.
+         * Touch horizontal movement.
          */
 
         if (
@@ -961,47 +1700,99 @@ class Player {
 
 
         /*
-         * Dive.
+         * Dive is now a DISCRETE action.
+         *
+         * A quick downward swipe triggers it.
+         *
+         * We do NOT keep checking whether
+         * the player is holding the finger down.
          */
 
-        this.diving = false;
-
         if (
-            this.vy > 0
+            this.vy > 0 &&
+            !this.diving
         ) {
 
             if (
                 keyDown
             ) {
 
-                this.diving = true;
+                this.startDive();
             }
 
-            if (
-                touchActive &&
-                touchY -
-                    touchStartY >
-                    55
-            ) {
-
-                this.diving = true;
-            }
 
             if (
-                this.diving
+                touchActive
             ) {
 
-                this.vy +=
-                    DIVE_ACCELERATION *
-                    dt;
+                const dx =
+                    touchX -
+                    touchStartX;
 
-                this.vy =
-                    Math.min(
-                        this.vy,
-                        MAX_FALL_SPEED
-                    );
+                const dy =
+                    touchY -
+                    touchStartY;
+
+
+                const downwardSwipe =
+                    dy > 48 &&
+                    dy >
+                        Math.abs(dx) *
+                        0.65;
+
+
+                if (
+                    downwardSwipe
+                ) {
+
+                    this.startDive();
+
+
+                    /*
+                     * Consume the gesture.
+                     *
+                     * This prevents the same drag
+                     * from repeatedly triggering dive.
+                     */
+
+                    touchStartX =
+                        touchX;
+
+                    touchStartY =
+                        touchY;
+                }
             }
         }
+    }
+
+
+    startDive() {
+
+        if (
+            this.diving
+        ) {
+
+            return;
+        }
+
+        this.diving = true;
+
+        vibrate(12);
+
+        beep(
+            180,
+            0.06,
+            0.025,
+            "sawtooth"
+        );
+
+        game.addParticles(
+            this.x,
+            this.y,
+            [255, 105, 150],
+            8,
+            0.8
+        );
     }
 
 
@@ -1016,6 +1807,35 @@ class Player {
                 this.vy,
                 MAX_FALL_SPEED
             );
+
+
+        /*
+         * Lifeline slowly counts down.
+         */
+
+        if (
+            this.lifelineTimer > 0
+        ) {
+
+            this.lifelineTimer -=
+                dt;
+
+            if (
+                this.lifelineTimer < 0
+            ) {
+
+                this.lifelineTimer = 0;
+            }
+        }
+
+
+        if (
+            this.savedRecently > 0
+        ) {
+
+            this.savedRecently -=
+                dt;
+        }
     }
 
 
@@ -1048,6 +1868,8 @@ class Player {
                 ) *
                 WALL_RESTITUTION;
 
+            vibrate(8);
+
             return true;
         }
 
@@ -1067,6 +1889,8 @@ class Player {
                     this.vx
                 ) *
                 WALL_RESTITUTION;
+
+            vibrate(8);
 
             return true;
         }
@@ -1103,8 +1927,7 @@ class Player {
 
 
         /*
-         * Reflect velocity from the
-         * surface.
+         * Reflect velocity.
          */
 
         this.vx -=
@@ -1125,10 +1948,6 @@ class Player {
             PLATFORM_RESTITUTION;
 
 
-        let type =
-            "side";
-
-
         /*
          * TOP LANDING
          */
@@ -1137,16 +1956,9 @@ class Player {
             ny < -0.5
         ) {
 
-            type =
-                "top";
-
             let power =
                 BOUNCE_POWER;
 
-
-            /*
-             * Dive bounce.
-             */
 
             if (
                 this.diving
@@ -1199,15 +2011,12 @@ class Player {
 
 
         /*
-         * BOTTOM
+         * Bottom.
          */
 
         if (
             ny > 0.5
         ) {
-
-            type =
-                "bottom";
 
             this.squash =
                 1.15;
@@ -1216,13 +2025,14 @@ class Player {
                 0.85;
 
             return {
-                type
+                type:
+                    "bottom"
             };
         }
 
 
         /*
-         * SIDE
+         * Side.
          */
 
         this.squash =
@@ -1232,8 +2042,75 @@ class Player {
             0.85;
 
         return {
-            type
+            type:
+                "side"
         };
+    }
+
+
+    activateLifeline() {
+
+        this.lifelineTimer =
+            LIFELINE_DURATION;
+
+        vibrate([
+            15,
+            25,
+            15
+        ]);
+
+        beep(
+            600,
+            0.1,
+            0.035
+        );
+
+        beep(
+            900,
+            0.14,
+            0.025
+        );
+    }
+
+
+    consumeLifeline() {
+
+        this.lifelineTimer = 0;
+
+        this.savedRecently = 1.5;
+
+        /*
+         * The player is pulled back into
+         * a safe bounce.
+         */
+
+        this.vy =
+            -1180;
+
+        this.diving =
+            false;
+
+        vibrate([
+            20,
+            30,
+            35,
+            30,
+            50
+        ]);
+
+        beep(
+            260,
+            0.12,
+            0.04,
+            "square"
+        );
+
+        beep(
+            520,
+            0.18,
+            0.035,
+            "sine"
+        );
     }
 
 
@@ -1336,6 +2213,65 @@ class Player {
             cameraY;
 
 
+        /*
+         * Lifeline shield.
+         */
+
+        if (
+            this.lifelineTimer > 0 ||
+            this.savedRecently > 0
+        ) {
+
+            const pulse =
+                1 +
+                Math.sin(
+                    performance.now() /
+                    100
+                ) *
+                0.08;
+
+            const hue =
+                (
+                    performance.now() /
+                    12
+                ) %
+                360;
+
+            ctx.shadowBlur =
+                35;
+
+            ctx.shadowColor =
+                `hsla(${
+                    hue
+                },100%,65%,0.8)`;
+
+            ctx.strokeStyle =
+                `hsla(${
+                    hue
+                },100%,75%,0.8)`;
+
+            ctx.lineWidth = 4;
+
+            ctx.beginPath();
+
+            ctx.arc(
+                this.x,
+                sy,
+                29 * pulse,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.stroke();
+
+            ctx.shadowBlur = 0;
+        }
+
+
+        /*
+         * Player.
+         */
+
         ctx.shadowBlur =
             18;
 
@@ -1362,6 +2298,10 @@ class Player {
         ctx.shadowBlur =
             0;
 
+
+        /*
+         * Player highlight.
+         */
 
         ctx.fillStyle =
             "#50c8ff";
@@ -1411,6 +2351,8 @@ class Game {
             new Player();
 
         this.platforms = [];
+
+        this.orbs = [];
 
         this.particles = [];
 
@@ -1467,7 +2409,7 @@ class Game {
 
 
         /*
-         * GAME STATE
+         * STATE
          */
 
         this.started = false;
@@ -1483,6 +2425,13 @@ class Game {
 
         this.flash = 0;
 
+        this.bannerText = "";
+
+        this.bannerColor =
+            [255,255,255];
+
+        this.bannerTimer = 0;
+
 
         /*
          * HEIGHT SPEED TRACKING
@@ -1495,6 +2444,49 @@ class Game {
             1000;
 
 
+        /*
+         * Flame animation.
+         */
+
+        this.flames = [];
+
+        for (
+            let i = 0;
+            i < 28;
+            i++
+        ) {
+
+            this.flames.push({
+
+                x:
+                    (
+                        i /
+                        27
+                    ) *
+                    WIDTH,
+
+                seed:
+                    Math.random() *
+                    100,
+
+                width:
+                    18 +
+                    Math.random() *
+                    20,
+
+                height:
+                    28 +
+                    Math.random() *
+                    25,
+
+                speed:
+                    1 +
+                    Math.random() *
+                    2
+            });
+        }
+
+
         this.spawnInitialPlatforms();
     }
 
@@ -1504,6 +2496,8 @@ class Game {
         this.player.reset();
 
         this.platforms = [];
+
+        this.orbs = [];
 
         this.particles = [];
 
@@ -1527,6 +2521,8 @@ class Game {
 
         this.flash = 0;
 
+        this.bannerTimer = 0;
+
         this.lastPlatformSide =
             "left";
 
@@ -1537,14 +2533,32 @@ class Game {
             1000;
 
         this.spawnInitialPlatforms();
+
+        vibrate(10);
+
+        beep(
+            440,
+            0.08,
+            0.025
+        );
     }
 
+
+    /*
+     * Difficulty intentionally starts at ZERO
+     * and only begins increasing after the
+     * player has climbed.
+     */
 
     difficulty() {
 
         return clamp(
-            this.height /
-                6000,
+            Math.max(
+                0,
+                this.height -
+                500
+            ) /
+            5500,
             0,
             1
         );
@@ -1553,10 +2567,39 @@ class Game {
 
     platformSpeed() {
 
+        const d =
+            this.difficulty();
+
         return lerp(
-            25,
+            18,
             145,
-            this.difficulty()
+            d
+        );
+    }
+
+
+    verticalGap() {
+
+        const d =
+            this.difficulty();
+
+        return lerp(
+            START_VERTICAL_GAP,
+            END_VERTICAL_GAP,
+            d
+        );
+    }
+
+
+    horizontalReach() {
+
+        const d =
+            this.difficulty();
+
+        return lerp(
+            START_HORIZONTAL_REACH,
+            END_HORIZONTAL_REACH,
+            d
         );
     }
 
@@ -1569,6 +2612,8 @@ class Game {
 
         this.platforms = [];
 
+        this.orbs = [];
+
 
         /*
          * Starting platform.
@@ -1578,7 +2623,7 @@ class Game {
             new Platform(
                 WIDTH * 0.50,
                 625,
-                5,
+                7,
                 false,
                 false
             )
@@ -1586,48 +2631,78 @@ class Game {
 
 
         /*
-         * The first jumps deliberately
-         * alternate sides.
+         * Early platforms still alternate
+         * left/right, but the movement is gentle.
          */
 
-        this.platforms.push(
-            new Platform(
-                115,
-                455,
-                5,
-                false,
-                false
-            )
+        this.addInitialPlatform(
+            175,
+            517,
+            7
+        );
+
+        this.addInitialPlatform(
+            305,
+            409,
+            7
+        );
+
+        this.addInitialPlatform(
+            170,
+            301,
+            7
+        );
+
+        this.addInitialPlatform(
+            315,
+            193,
+            6
+        );
+
+        this.addInitialPlatform(
+            165,
+            85,
+            6
         );
 
 
-        this.platforms.push(
-            new Platform(
-                365,
-                285,
-                5,
-                false,
-                false
-            )
-        );
+        /*
+         * Add an early orb.
+         */
 
-
-        this.platforms.push(
-            new Platform(
-                110,
-                115,
-                5,
-                false,
-                false
-            )
+        this.addOrb(
+            WIDTH * 0.50,
+            570,
+            ORB_TYPES.FLOW
         );
 
 
         this.nextPlatformY =
-            -65;
+            -23;
 
         this.lastPlatformSide =
             "left";
+    }
+
+
+    addInitialPlatform(
+        x,
+        y,
+        width
+    ) {
+
+        const platform =
+            new Platform(
+                x,
+                y,
+                width,
+                false,
+                false
+            );
+
+        this.platforms.push(
+            platform
+        );
     }
 
 
@@ -1662,26 +2737,19 @@ class Game {
 
 
         /*
-         * -------------------------------------------------
-         * SIDE-TO-SIDE GENERATION
-         * -------------------------------------------------
+         * Preserve the visual alternating rhythm.
          *
-         * Most platforms deliberately appear on
-         * the opposite side from the previous one.
-         *
-         * This creates the main rhythm:
-         *
-         * LEFT -> RIGHT -> LEFT -> RIGHT
-         *
-         * with occasional variations.
+         * Occasionally a center platform appears
+         * as a variation, but left/right remains
+         * the dominant visual pattern.
          */
 
         let side;
 
         const variationChance =
             lerp(
-                0.08,
-                0.22,
+                0.06,
+                0.16,
                 d
             );
 
@@ -1713,11 +2781,6 @@ class Game {
             side === "left"
         ) {
 
-            /*
-             * Keep the platform genuinely
-             * toward the left.
-             */
-
             x =
                 75 +
                 Math.random() *
@@ -1737,11 +2800,6 @@ class Game {
 
         } else {
 
-            /*
-             * Center platforms are occasional
-             * breathing room.
-             */
-
             x =
                 WIDTH / 2 +
                 (
@@ -1753,9 +2811,7 @@ class Game {
 
 
         /*
-         * If the previous platform exists,
-         * make sure the horizontal jump isn't
-         * ridiculous.
+         * Limit the jump distance.
          */
 
         if (
@@ -1763,11 +2819,7 @@ class Game {
         ) {
 
             const maximumReach =
-                lerp(
-                    300,
-                    390,
-                    d
-                );
+                this.horizontalReach();
 
             if (
                 Math.abs(
@@ -1800,25 +2852,37 @@ class Game {
 
         /*
          * Platform width.
+         *
+         * Very wide early.
          */
 
         let width;
 
         if (
-            d < 0.25
+            d < 0.18
         ) {
 
-            width = 5;
+            width = 7;
 
         } else if (
-            d < 0.55
+            d < 0.38
+        ) {
+
+            width =
+                Math.random() <
+                0.8
+                    ? 6
+                    : 7;
+
+        } else if (
+            d < 0.65
         ) {
 
             width =
                 Math.random() <
                 0.75
                     ? 5
-                    : 4;
+                    : 6;
 
         } else {
 
@@ -1833,21 +2897,20 @@ class Game {
 
 
         /*
-         * Moving platforms don't appear
-         * immediately.
+         * Moving platforms arrive later.
          */
 
         const movingChance =
-            d < 0.35
+            d < 0.45
                 ? 0
                 : lerp(
                     0,
                     0.42,
                     (
                         d -
-                        0.35
+                        0.45
                     ) /
-                    0.65
+                    0.55
                 );
 
 
@@ -1857,7 +2920,7 @@ class Game {
 
 
         /*
-         * Rare bonus platform.
+         * Bonus platform.
          */
 
         const bonus =
@@ -1881,9 +2944,7 @@ class Game {
 
 
         /*
-         * Remember which side this platform
-         * occupied so the next one can generally
-         * appear on the opposite side.
+         * Remember side.
          */
 
         if (
@@ -1901,37 +2962,137 @@ class Game {
 
             this.lastPlatformSide =
                 "right";
-
-        } else {
-
-            /*
-             * Center platform doesn't change
-             * the alternating rhythm.
-             */
         }
 
 
         /*
-         * Bigger vertical spacing.
-         *
-         * Difficulty makes it gradually larger.
+         * Vertical gap.
          */
 
         const gap =
-            lerp(
-                MIN_VERTICAL_GAP,
-                MAX_VERTICAL_GAP,
-                d
-            ) +
+            this.verticalGap() +
             (
                 Math.random() *
-                24 -
-                12
+                14 -
+                7
             );
 
 
         this.nextPlatformY -=
             gap;
+
+
+        /*
+         * Occasionally spawn a collectible
+         * between the current and next platform.
+         */
+
+        this.spawnOrbForPlatform(
+            platform,
+            d
+        );
+    }
+
+
+    /* =====================================================
+       ORB SPAWNING
+    ===================================================== */
+
+    spawnOrbForPlatform(
+        platform,
+        d
+    ) {
+
+        const roll =
+            Math.random();
+
+
+        /*
+         * Lifeline is deliberately rare.
+         */
+
+        if (
+            roll < 0.025 &&
+            d > 0.08
+        ) {
+
+            this.addOrb(
+                platform.x,
+                platform.y - 58,
+                ORB_TYPES.LIFELINE
+            );
+
+            return;
+        }
+
+
+        /*
+         * Dive orb.
+         */
+
+        if (
+            roll < 0.13 &&
+            d > 0.12
+        ) {
+
+            this.addOrb(
+                platform.x,
+                platform.y - 55,
+                ORB_TYPES.DIVE
+            );
+
+            return;
+        }
+
+
+        /*
+         * Gold orb.
+         */
+
+        if (
+            roll < 0.28
+        ) {
+
+            this.addOrb(
+                platform.x,
+                platform.y - 58,
+                ORB_TYPES.GOLD
+            );
+
+            return;
+        }
+
+
+        /*
+         * Flow orb.
+         */
+
+        if (
+            roll < 0.62
+        ) {
+
+            this.addOrb(
+                platform.x,
+                platform.y - 55,
+                ORB_TYPES.FLOW
+            );
+        }
+    }
+
+
+    addOrb(
+        x,
+        y,
+        type
+    ) {
+
+        this.orbs.push(
+            new Orb(
+                x,
+                y,
+                type
+            )
+        );
     }
 
 
@@ -1965,6 +3126,74 @@ class Game {
     }
 
 
+    orbEffect(
+        orb
+    ) {
+
+        let particleColor =
+            orb.primaryColor();
+
+        let amount = 24;
+
+        let power = 1.2;
+
+
+        if (
+            orb.type ===
+            ORB_TYPES.LIFELINE
+        ) {
+
+            particleColor =
+                [255, 100, 220];
+
+            amount = 55;
+
+            power = 1.7;
+
+            this.shake = 7;
+
+            this.flash = 0.12;
+
+        } else if (
+            orb.type ===
+            ORB_TYPES.GOLD
+        ) {
+
+            amount = 32;
+
+            power = 1.35;
+
+            this.shake = 4;
+
+        } else if (
+            orb.type ===
+            ORB_TYPES.DIVE
+        ) {
+
+            amount = 30;
+
+            power = 1.3;
+
+            this.shake = 5;
+
+        } else {
+
+            amount = 20;
+
+            power = 1.1;
+        }
+
+
+        this.addParticles(
+            orb.x,
+            orb.y,
+            particleColor,
+            amount,
+            power
+        );
+    }
+
+
     bounceEffect(
         x,
         y,
@@ -1989,6 +3218,18 @@ class Game {
             this.flash =
                 0.12;
 
+            vibrate([
+                10,
+                20,
+                15
+            ]);
+
+            beep(
+                600,
+                0.08,
+                0.035
+            );
+
         } else if (
             type === "edge"
         ) {
@@ -2002,6 +3243,14 @@ class Game {
             );
 
             this.shake = 5;
+
+            vibrate(16);
+
+            beep(
+                480,
+                0.06,
+                0.025
+            );
 
         } else if (
             type === "flow"
@@ -2020,6 +3269,14 @@ class Game {
             this.flash =
                 0.08;
 
+            vibrate(18);
+
+            beep(
+                720,
+                0.08,
+                0.03
+            );
+
         } else if (
             type === "dive"
         ) {
@@ -2028,11 +3285,30 @@ class Game {
                 x,
                 y,
                 [255, 105, 150],
-                28,
-                1.3
+                38,
+                1.5
             );
 
-            this.shake = 6;
+            this.shake = 7;
+
+            vibrate([
+                15,
+                20,
+                25
+            ]);
+
+            beep(
+                260,
+                0.08,
+                0.035,
+                "sawtooth"
+            );
+
+            beep(
+                520,
+                0.12,
+                0.025
+            );
 
         } else {
 
@@ -2044,7 +3320,7 @@ class Game {
                 1
             );
 
-            this.shake = 3;
+            vibrate(10);
         }
     }
 
@@ -2060,6 +3336,156 @@ class Game {
         );
 
         this.shake = 12;
+
+        vibrate([
+            40,
+            30,
+            80
+        ]);
+
+        beep(
+            130,
+            0.2,
+            0.045,
+            "sawtooth"
+        );
+    }
+
+
+    /* =====================================================
+       ORB COLLECTION
+    ===================================================== */
+
+    collectOrb(
+        orb
+    ) {
+
+        if (
+            orb.collected
+        ) {
+
+            return;
+        }
+
+        orb.collected = true;
+
+
+        this.orbEffect(
+            orb
+        );
+
+
+        if (
+            orb.type ===
+            ORB_TYPES.FLOW
+        ) {
+
+            this.flow =
+                clamp(
+                    this.flow + 1,
+                    0,
+                    10
+                );
+
+            this.score +=
+                150;
+
+            this.showBanner(
+                "+ FLOW",
+                [90,255,220]
+            );
+
+            beep(
+                850,
+                0.08,
+                0.025
+            );
+
+        } else if (
+            orb.type ===
+            ORB_TYPES.GOLD
+        ) {
+
+            this.score +=
+                500;
+
+            this.showBanner(
+                "+500",
+                [255,215,80]
+            );
+
+            beep(
+                700,
+                0.08,
+                0.03
+            );
+
+            setTimeout(
+                () => {
+                    beep(
+                        1050,
+                        0.1,
+                        0.025
+                    );
+                },
+                45
+            );
+
+        } else if (
+            orb.type ===
+            ORB_TYPES.DIVE
+        ) {
+
+            this.score +=
+                250;
+
+            this.flow =
+                clamp(
+                    this.flow + 1,
+                    0,
+                    10
+                );
+
+            this.showBanner(
+                "DIVE READY",
+                [255,105,150]
+            );
+
+        } else if (
+            orb.type ===
+            ORB_TYPES.LIFELINE
+        ) {
+
+            this.score +=
+                350;
+
+            this.player.activateLifeline();
+
+            this.showBanner(
+                "LIFELINE",
+                [255,130,225]
+            );
+        }
+    }
+
+
+    /* =====================================================
+       BANNER
+    ===================================================== */
+
+    showBanner(
+        text,
+        c
+    ) {
+
+        this.bannerText =
+            text;
+
+        this.bannerColor =
+            c;
+
+        this.bannerTimer =
+            0.9;
     }
 
 
@@ -2075,10 +3501,6 @@ class Game {
         const r =
             platform.rect;
 
-
-        /*
-         * Circle / rectangle collision.
-         */
 
         const closestX =
             clamp(
@@ -2113,13 +3535,6 @@ class Game {
             return false;
         }
 
-
-        /*
-         * Determine which face was hit.
-         *
-         * This means the player cannot simply
-         * fall through the platform.
-         */
 
         const leftPen =
             player.x +
@@ -2212,10 +3627,6 @@ class Game {
             hit.ny;
 
 
-        /*
-         * Relative velocity.
-         */
-
         const relativeVx =
             player.vx;
 
@@ -2239,10 +3650,6 @@ class Game {
         }
 
 
-        /*
-         * Push player out of platform.
-         */
-
         const penetration =
             Math.max(
                 hit.value,
@@ -2258,10 +3665,6 @@ class Game {
             ny *
             penetration;
 
-
-        /*
-         * Bounce.
-         */
 
         const result =
             player.bounce(
@@ -2287,18 +3690,6 @@ class Game {
             result.type ===
             "top"
         ) {
-
-            /*
-             * Only a TOP landing can score.
-             *
-             * Side and bottom collisions never
-             * create points.
-             */
-
-
-            /*
-             * Detect edge / corner.
-             */
 
             const centerDistance =
                 Math.abs(
@@ -2365,18 +3756,6 @@ class Game {
             }
 
 
-            /*
-             * ------------------------------------------------
-             * ANTI-EXPLOIT:
-             *
-             * This platform has already awarded its
-             * landing points.
-             *
-             * The player can bounce off it again,
-             * but gets ZERO additional score.
-             * ------------------------------------------------
-             */
-
             const firstLanding =
                 !platform.scoredThisVisit;
 
@@ -2389,22 +3768,9 @@ class Game {
                     true;
 
 
-                /*
-                 * Base points.
-                 *
-                 * The important change:
-                 *
-                 * SCORE IS FOR REACHING NEW
-                 * PLATFORMS, NOT FOR BOUNCING.
-                 */
-
                 let points =
                     100;
 
-
-                /*
-                 * Edge landing.
-                 */
 
                 if (
                     landingType ===
@@ -2416,10 +3782,6 @@ class Game {
                 }
 
 
-                /*
-                 * Corner landing.
-                 */
-
                 if (
                     landingType ===
                     "corner"
@@ -2430,22 +3792,14 @@ class Game {
                 }
 
 
-                /*
-                 * Dive landing.
-                 */
-
                 if (
                     result.dive
                 ) {
 
                     points +=
-                        100;
+                        150;
                 }
 
-
-                /*
-                 * Bonus platform.
-                 */
 
                 if (
                     platform.bonus
@@ -2456,19 +3810,8 @@ class Game {
                 }
 
 
-                /* -----------------------------------------
-                   FLOW
-                ----------------------------------------- */
-
                 /*
-                 * Clean means:
-                 *
-                 * - top landing
-                 * - not a corner collision
-                 * - controlled horizontal speed
-                 *
-                 * The player is rewarded for making
-                 * smooth consecutive jumps.
+                 * Clean landing.
                  */
 
                 const clean =
@@ -2479,9 +3822,7 @@ class Game {
 
 
                 if (
-                    clean ||
-                    landingType === "edge" ||
-                    landingType === "corner"
+                    clean
                 ) {
 
                     this.flow =
@@ -2510,9 +3851,6 @@ class Game {
 
                 /*
                  * Flow multiplier.
-                 *
-                 * This rewards actually progressing
-                 * through multiple platforms.
                  */
 
                 if (
@@ -2531,9 +3869,6 @@ class Game {
 
                 /*
                  * Fast climbing bonus.
-                 *
-                 * A clean series of quick hops that
-                 * gains lots of height gets extra points.
                  */
 
                 const now =
@@ -2580,7 +3915,7 @@ class Game {
 
 
                 /*
-                 * Visual feedback.
+                 * Effect.
                  */
 
                 let effect =
@@ -2628,31 +3963,12 @@ class Game {
             }
 
 
-            /*
-             * IMPORTANT:
-             *
-             * If the player lands on a platform
-             * that was already scored, it still
-             * bounces normally.
-             *
-             * It simply doesn't award score again.
-             */
-
             return true;
         }
 
 
-        /* =================================================
-           SIDE / BOTTOM COLLISION
-        ================================================= */
-
         /*
-         * Side and bottom hits still physically
-         * bounce the player.
-         *
-         * But they do NOT give score.
-         *
-         * They also slightly interrupt Flow.
+         * Side/bottom collision.
          */
 
         this.flow =
@@ -2675,6 +3991,148 @@ class Game {
 
 
     /* =====================================================
+       LIFELINE / FLAME COLLISION
+    ===================================================== */
+
+    checkDeathZone() {
+
+        const screenY =
+            this.player.y +
+            this.cameraY;
+
+
+        if (
+            screenY <=
+            FLAME_DANGER_Y
+        ) {
+
+            return;
+        }
+
+
+        /*
+         * If the player has a Lifeline,
+         * catch them instead of killing them.
+         */
+
+        if (
+            this.player.lifelineTimer >
+            0
+        ) {
+
+            this.saveFromFlames();
+
+            return;
+        }
+
+
+        this.die();
+    }
+
+
+    saveFromFlames() {
+
+        /*
+         * Move the player to the flame line
+         * and create an explosive safety bounce.
+         */
+
+        this.player.y =
+            FLAME_DANGER_Y -
+            this.cameraY -
+            this.player.radius -
+            3;
+
+
+        this.player.consumeLifeline();
+
+
+        this.flow =
+            Math.max(
+                0,
+                this.flow - 1
+            );
+
+
+        this.showBanner(
+            "SAVED!",
+            [255,150,240]
+        );
+
+
+        this.addParticles(
+            this.player.x,
+            FLAME_DANGER_Y -
+                this.cameraY,
+            [255,100,220],
+            55,
+            1.7
+        );
+
+
+        /*
+         * Rainbow shockwave.
+         */
+
+        for (
+            let i = 0;
+            i < 30;
+            i++
+        ) {
+
+            const angle =
+                (
+                    i /
+                    30
+                ) *
+                Math.PI *
+                2;
+
+            const p =
+                new Particle(
+                    this.player.x,
+                    FLAME_DANGER_Y -
+                        this.cameraY,
+                    hslToRgb(
+                        (
+                            i /
+                            30
+                        ) *
+                        360,
+                        100,
+                        65
+                    ),
+                    1.8
+                );
+
+            p.vx =
+                Math.cos(
+                    angle
+                ) *
+                (
+                    150 +
+                    Math.random() *
+                    150
+                );
+
+            p.vy =
+                Math.sin(
+                    angle
+                ) *
+                (
+                    150 +
+                    Math.random() *
+                    150
+                );
+
+            this.particles.push(
+                p
+            );
+        }
+    }
+
+
+    /* =====================================================
        UPDATE
     ===================================================== */
 
@@ -2685,6 +4143,14 @@ class Game {
         ) {
 
             this.updateParticles(
+                dt
+            );
+
+            this.updateOrbs(
+                dt
+            );
+
+            this.updateFlames(
                 dt
             );
 
@@ -2700,7 +4166,7 @@ class Game {
 
 
         /*
-         * Player control.
+         * Player.
          */
 
         this.player.control(
@@ -2709,10 +4175,7 @@ class Game {
 
 
         /*
-         * Move platforms downward.
-         *
-         * This gives the impression that the player
-         * is climbing upward through the world.
+         * Platforms.
          */
 
         const speed =
@@ -2732,7 +4195,7 @@ class Game {
 
 
         /*
-         * Physics substeps.
+         * Physics.
          */
 
         const subDt =
@@ -2760,31 +4223,7 @@ class Game {
              * Walls.
              */
 
-            if (
-                this.player.wallCollision()
-            ) {
-
-                this.addParticles(
-                    this.player.x,
-                    this.player.y,
-                    [70,220,255],
-                    12
-                );
-
-
-                /*
-                 * Wall bounce isn't a scoring
-                 * event.
-                 *
-                 * It also slightly disrupts flow.
-                 */
-
-                this.flow =
-                    Math.max(
-                        0,
-                        this.flow - 1
-                    );
-            }
+            this.player.wallCollision();
 
 
             /*
@@ -2805,6 +4244,20 @@ class Game {
 
                     break;
                 }
+            }
+
+
+            /*
+             * Death zone.
+             */
+
+            this.checkDeathZone();
+
+            if (
+                this.gameOver
+            ) {
+
+                break;
             }
         }
 
@@ -2843,7 +4296,7 @@ class Game {
 
 
         /*
-         * Best height.
+         * Best values.
          */
 
         this.bestHeight =
@@ -2851,11 +4304,6 @@ class Game {
                 this.bestHeight,
                 this.height
             );
-
-
-        /*
-         * Best score.
-         */
 
         this.bestScore =
             Math.max(
@@ -2876,8 +4324,7 @@ class Game {
 
 
         /*
-         * Height tracking for fast-climb
-         * scoring.
+         * Height tracking.
          */
 
         const now =
@@ -2900,7 +4347,7 @@ class Game {
 
 
         /*
-         * Spawn new platforms.
+         * Spawn.
          */
 
         this.spawnTimer +=
@@ -2938,21 +4385,12 @@ class Game {
 
 
         /*
-         * Death.
+         * Orbs.
          */
 
-        const screenY =
-            this.player.y +
-            this.cameraY;
-
-
-        if (
-            screenY >
-            HEIGHT + 70
-        ) {
-
-            this.die();
-        }
+        this.updateOrbs(
+            dt
+        );
 
 
         /*
@@ -2965,6 +4403,26 @@ class Game {
 
         this.player.updateVisuals();
 
+        this.updateFlames(
+            dt
+        );
+
+
+        /*
+         * Banner.
+         */
+
+        this.bannerTimer =
+            Math.max(
+                0,
+                this.bannerTimer -
+                dt
+            );
+
+
+        /*
+         * Screen effects.
+         */
 
         this.shake =
             Math.max(
@@ -2973,13 +4431,97 @@ class Game {
                 dt * 20
             );
 
-
         this.flash =
             Math.max(
                 0,
                 this.flash -
                 dt
             );
+    }
+
+
+    /* =====================================================
+       ORB UPDATE
+    ===================================================== */
+
+    updateOrbs(dt) {
+
+        for (
+            let i =
+                this.orbs.length - 1;
+            i >= 0;
+            i--
+        ) {
+
+            const orb =
+                this.orbs[i];
+
+            orb.update(
+                dt
+            );
+
+
+            if (
+                !orb.collected
+            ) {
+
+                const d =
+                    distance(
+                        this.player.x,
+                        this.player.y,
+                        orb.x,
+                        orb.y
+                    );
+
+
+                if (
+                    d <
+                    this.player.radius +
+                    orb.radius +
+                    5
+                ) {
+
+                    this.collectOrb(
+                        orb
+                    );
+                }
+            }
+
+
+            /*
+             * Remove collected or old orbs.
+             */
+
+            if (
+                orb.collected
+            ) {
+
+                this.orbs.splice(
+                    i,
+                    1
+                );
+
+                continue;
+            }
+
+
+            const screenY =
+                orb.y +
+                this.cameraY;
+
+
+            if (
+                screenY >
+                HEIGHT +
+                150
+            ) {
+
+                this.orbs.splice(
+                    i,
+                    1
+                );
+            }
+        }
     }
 
 
@@ -3059,6 +4601,337 @@ class Game {
 
 
     /* =====================================================
+       FLAMES
+    ===================================================== */
+
+    updateFlames(dt) {
+
+        /*
+         * Nothing needed here because the flames
+         * use performance.now() for animation.
+         *
+         * This method exists so flame animation
+         * can easily become more complex later.
+         */
+    }
+
+
+    drawFlames() {
+
+        const time =
+            performance.now() /
+            1000;
+
+
+        /*
+         * Dark danger glow above flames.
+         */
+
+        const dangerGradient =
+            ctx.createLinearGradient(
+                0,
+                FLAME_DANGER_Y - 65,
+                0,
+                FLAME_DANGER_Y + 10
+            );
+
+        dangerGradient.addColorStop(
+            0,
+            "rgba(0,255,110,0)"
+        );
+
+        dangerGradient.addColorStop(
+            1,
+            "rgba(0,255,100,0.16)"
+        );
+
+        ctx.fillStyle =
+            dangerGradient;
+
+        ctx.fillRect(
+            0,
+            FLAME_DANGER_Y - 65,
+            WIDTH,
+            80
+        );
+
+
+        /*
+         * Flames.
+         */
+
+        for (
+            const flame of
+            this.flames
+        ) {
+
+            const wave =
+                Math.sin(
+                    time *
+                    flame.speed +
+                    flame.seed
+                );
+
+            const wave2 =
+                Math.sin(
+                    time *
+                    flame.speed *
+                    1.7 +
+                    flame.seed *
+                    2
+                );
+
+
+            const height =
+                flame.height +
+                wave *
+                8 +
+                wave2 *
+                5;
+
+
+            const x =
+                flame.x +
+                wave2 *
+                5;
+
+
+            const bottom =
+                HEIGHT + 5;
+
+            const top =
+                bottom -
+                height;
+
+
+            /*
+             * Outer glow.
+             */
+
+            ctx.shadowBlur =
+                18;
+
+            ctx.shadowColor =
+                "rgba(0,255,100,0.65)";
+
+
+            const gradient =
+                ctx.createLinearGradient(
+                    0,
+                    top,
+                    0,
+                    bottom
+                );
+
+            gradient.addColorStop(
+                0,
+                "#aaffb5"
+            );
+
+            gradient.addColorStop(
+                0.25,
+                "#35ff72"
+            );
+
+            gradient.addColorStop(
+                0.65,
+                "#00d84d"
+            );
+
+            gradient.addColorStop(
+                1,
+                "#008b38"
+            );
+
+            ctx.fillStyle =
+                gradient;
+
+
+            /*
+             * Flame silhouette.
+             */
+
+            ctx.beginPath();
+
+            ctx.moveTo(
+                x -
+                    flame.width /
+                    2,
+                bottom
+            );
+
+            ctx.bezierCurveTo(
+                x -
+                    flame.width *
+                    0.55,
+                bottom -
+                    height *
+                    0.25,
+
+                x -
+                    flame.width *
+                    0.2,
+                top +
+                    height *
+                    0.2,
+
+                x,
+                top
+            );
+
+            ctx.bezierCurveTo(
+                x +
+                    flame.width *
+                    0.1,
+                top +
+                    height *
+                    0.35,
+
+                x +
+                    flame.width *
+                    0.5,
+                bottom -
+                    height *
+                    0.35,
+
+                x +
+                    flame.width /
+                    2,
+                bottom
+            );
+
+            ctx.closePath();
+
+            ctx.fill();
+
+            ctx.shadowBlur = 0;
+        }
+
+
+        /*
+         * Bright flame cores.
+         */
+
+        for (
+            let i = 0;
+            i < this.flames.length;
+            i++
+        ) {
+
+            const flame =
+                this.flames[i];
+
+            const wave =
+                Math.sin(
+                    time *
+                    flame.speed *
+                    1.4 +
+                    flame.seed
+                );
+
+            const height =
+                flame.height *
+                0.5 +
+                wave *
+                5;
+
+            const x =
+                flame.x +
+                Math.sin(
+                    time *
+                    flame.speed +
+                    flame.seed
+                ) *
+                3;
+
+            const bottom =
+                HEIGHT + 2;
+
+            const top =
+                bottom -
+                height;
+
+
+            ctx.fillStyle =
+                "rgba(210,255,170,0.85)";
+
+            ctx.beginPath();
+
+            ctx.moveTo(
+                x -
+                    flame.width *
+                    0.15,
+                bottom
+            );
+
+            ctx.quadraticCurveTo(
+                x -
+                    flame.width *
+                    0.18,
+                top +
+                    height *
+                    0.25,
+
+                x,
+                top
+            );
+
+            ctx.quadraticCurveTo(
+                x +
+                    flame.width *
+                    0.2,
+                top +
+                    height *
+                    0.3,
+
+                x +
+                    flame.width *
+                    0.15,
+                bottom
+            );
+
+            ctx.fill();
+        }
+
+
+        /*
+         * Warning line.
+         */
+
+        ctx.fillStyle =
+            "rgba(40,255,110,0.22)";
+
+        ctx.fillRect(
+            0,
+            FLAME_DANGER_Y,
+            WIDTH,
+            3
+        );
+
+
+        /*
+         * Danger text, subtle enough not to
+         * dominate gameplay.
+         */
+
+        ctx.font =
+            "bold 11px Arial";
+
+        ctx.fillStyle =
+            "rgba(190,255,205,0.65)";
+
+        ctx.textAlign =
+            "center";
+
+        ctx.fillText(
+            "DANGER",
+            WIDTH / 2,
+            FLAME_DANGER_Y - 8
+        );
+    }
+
+
+    /* =====================================================
        DEATH
     ===================================================== */
 
@@ -3095,7 +4968,6 @@ class Game {
             this.bestScore
         );
 
-
         localStorage.setItem(
             "bounceBestHeight",
             this.bestHeight
@@ -3123,12 +4995,12 @@ class Game {
 
         gradient.addColorStop(
             0,
-            "#070a14"
+            "#050812"
         );
 
         gradient.addColorStop(
             1,
-            "#0f1728"
+            "#0d1728"
         );
 
 
@@ -3267,7 +5139,7 @@ class Game {
             "rgba(220,235,250,0.95)";
 
         ctx.fillText(
-            `HEIGHT  ${
+            `HEIGHT ${
                 this.height.toLocaleString()
             }`,
             WIDTH / 2,
@@ -3301,6 +5173,68 @@ class Game {
 
 
         /*
+         * Lifeline.
+         */
+
+        if (
+            this.player.lifelineTimer >
+            0
+        ) {
+
+            const percentage =
+                clamp(
+                    this.player.lifelineTimer /
+                    LIFELINE_DURATION,
+                    0,
+                    1
+                );
+
+
+            ctx.font =
+                "bold 16px Arial";
+
+            ctx.fillStyle =
+                "#ff9ee9";
+
+            ctx.fillText(
+                `LIFELINE ${
+                    this.player.lifelineTimer.toFixed(1)
+                }s`,
+                WIDTH / 2,
+                160
+            );
+
+
+            /*
+             * Timer bar.
+             */
+
+            ctx.fillStyle =
+                "rgba(255,255,255,0.12)";
+
+            roundRect(
+                WIDTH / 2 - 65,
+                168,
+                130,
+                5,
+                3
+            );
+
+            ctx.fillStyle =
+                "#ff75dc";
+
+            roundRect(
+                WIDTH / 2 - 65,
+                168,
+                130 *
+                    percentage,
+                5,
+                3
+            );
+        }
+
+
+        /*
          * Dive indicator.
          */
 
@@ -3327,13 +5261,71 @@ class Game {
 
 
     /* =====================================================
+       BANNER
+    ===================================================== */
+
+    drawBanner() {
+
+        if (
+            this.bannerTimer <= 0
+        ) {
+
+            return;
+        }
+
+
+        const progress =
+            this.bannerTimer /
+            0.9;
+
+        const alpha =
+            Math.min(
+                1,
+                progress *
+                2
+            );
+
+
+        ctx.font =
+            "bold 30px Arial";
+
+        ctx.textAlign =
+            "center";
+
+        ctx.fillStyle =
+            rgba(
+                this.bannerColor,
+                alpha
+            );
+
+        ctx.shadowBlur =
+            18;
+
+        ctx.shadowColor =
+            rgba(
+                this.bannerColor,
+                alpha *
+                0.7
+            );
+
+        ctx.fillText(
+            this.bannerText,
+            WIDTH / 2,
+            225
+        );
+
+        ctx.shadowBlur = 0;
+    }
+
+
+    /* =====================================================
        START SCREEN
     ===================================================== */
 
     startScreen() {
 
         ctx.fillStyle =
-            "rgba(0,0,0,0.12)";
+            "rgba(0,0,0,0.18)";
 
         ctx.fillRect(
             0,
@@ -3345,7 +5337,7 @@ class Game {
 
         this.textCentered(
             "BOUNCE",
-            300,
+            270,
             66,
             WHITE
         );
@@ -3353,39 +5345,78 @@ class Game {
 
         this.textCentered(
             "DRAG LEFT / RIGHT",
-            390,
+            350,
             25,
             [70,220,255]
         );
 
 
         this.textCentered(
-            "CROSS THE SCREEN TO REACH THE NEXT PLATFORM",
-            425,
+            "REACH THE NEXT PLATFORM",
+            382,
             15,
             [180,195,210]
         );
 
 
         this.textCentered(
-            "DRAG DOWN WHILE FALLING TO DIVE",
-            465,
-            16,
+            "SWIPE DOWN TO DIVE",
+            425,
+            17,
             [255,120,150]
         );
 
 
         this.textCentered(
-            "Clean landings build FLOW.",
-            510,
+            "GRAB GLOWING ORBS",
+            460,
             17,
-            [150,165,185]
+            [110,255,225]
+        );
+
+
+        this.textCentered(
+            "🌈 LIFELINE = SECOND CHANCE",
+            495,
+            15,
+            [255,150,235]
+        );
+
+
+        /*
+         * Tiny flame preview.
+         */
+
+        ctx.fillStyle =
+            "#28e969";
+
+        ctx.shadowBlur =
+            15;
+
+        ctx.shadowColor =
+            "rgba(0,255,100,0.6)";
+
+        ctx.fillRect(
+            80,
+            530,
+            320,
+            3
+        );
+
+        ctx.shadowBlur = 0;
+
+
+        this.textCentered(
+            "DON'T FALL INTO THE FLAMES",
+            555,
+            14,
+            [150,255,175]
         );
 
 
         this.textCentered(
             "TAP TO START",
-            575,
+            625,
             20,
             [220,230,240]
         );
@@ -3531,6 +5562,21 @@ class Game {
 
 
         /*
+         * Orbs.
+         */
+
+        for (
+            const orb of
+            this.orbs
+        ) {
+
+            orb.draw(
+                this.cameraY
+            );
+        }
+
+
+        /*
          * Particles.
          */
 
@@ -3555,6 +5601,13 @@ class Game {
 
 
         /*
+         * Flames are always in screen space.
+         */
+
+        this.drawFlames();
+
+
+        /*
          * HUD.
          */
 
@@ -3563,6 +5616,8 @@ class Game {
         ) {
 
             this.hud();
+
+            this.drawBanner();
         }
 
 
@@ -3618,6 +5673,84 @@ class Game {
 
 
 /* =========================================================
+   COLOR HELPERS
+========================================================= */
+
+function hslToRgb(
+    h,
+    s,
+    l
+) {
+
+    s /= 100;
+    l /= 100;
+
+    const k =
+        n =>
+            (
+                n +
+                h / 30
+            ) % 12;
+
+    const a =
+        s *
+        Math.min(
+            l,
+            1 - l
+        );
+
+    const f =
+        n =>
+            l -
+            a *
+            Math.max(
+                -1,
+                Math.min(
+                    k(n) - 3,
+                    Math.min(
+                        9 - k(n),
+                        1
+                    )
+                )
+            );
+
+    return [
+        Math.round(
+            255 * f(0)
+        ),
+        Math.round(
+            255 * f(8)
+        ),
+        Math.round(
+            255 * f(4)
+        )
+    ];
+}
+
+
+function roundRect(
+    x,
+    y,
+    width,
+    height,
+    radius
+) {
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+        x,
+        y,
+        width,
+        height,
+        radius
+    );
+
+    ctx.fill();
+}
+
+
+/* =========================================================
    GAME LOOP
 ========================================================= */
 
@@ -3643,8 +5776,7 @@ function loop(now) {
 
 
     /*
-     * Prevent huge physics jumps if
-     * the browser pauses the game.
+     * Prevent huge physics jumps.
      */
 
     dt =
