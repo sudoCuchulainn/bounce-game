@@ -1,39 +1,80 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>BOUNCE</title>
+<meta charset="UTF-8">
 
-    <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            background: #070a14;
-            overflow: hidden;
-            width: 100%;
-            height: 100%;
-            touch-action: none;
-        }
+<meta
+    name="viewport"
+    content="width=device-width,
+             initial-scale=1.0,
+             maximum-scale=1.0,
+             user-scalable=no"
+>
 
-        body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
+<title>BOUNCE</title>
 
-        canvas {
-            display: block;
-            background: #070a14;
-            touch-action: none;
-        }
-    </style>
+<style>
+* {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #070a14;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: Arial, sans-serif;
+}
+
+#game {
+    display: block;
+    width: 480px;
+    height: 800px;
+    background: #070a14;
+    touch-action: none;
+}
+</style>
 </head>
 
 <body>
 
-<canvas id="game"></canvas>
+<canvas id="game" width="480" height="800"></canvas>
 
 <script>
+"use strict";
+
+/* =========================================================
+   BOUNCE
+   =========================================================
+
+   Core idea:
+
+   Bounce upward.
+   Make precise landings.
+   Maintain FLOW.
+   Climb as high as possible.
+
+   Top / side / bottom / corner collisions are all valid.
+
+   ========================================================= */
+
+
+/* =========================================================
+   CANVAS
+   ========================================================= */
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -42,234 +83,386 @@ const WIDTH = 480;
 const HEIGHT = 800;
 
 let scale = 1;
-let offsetX = 0;
-let offsetY = 0;
 
 function resize() {
+
     scale = Math.min(
         window.innerWidth / WIDTH,
         window.innerHeight / HEIGHT
     );
 
-    canvas.width = WIDTH;
-    canvas.height = HEIGHT;
+    canvas.style.width =
+        `${WIDTH * scale}px`;
 
-    canvas.style.width = WIDTH * scale + "px";
-    canvas.style.height = HEIGHT * scale + "px";
+    canvas.style.height =
+        `${HEIGHT * scale}px`;
 }
 
-window.addEventListener("resize", resize);
+window.addEventListener(
+    "resize",
+    resize
+);
+
 resize();
 
-const BG = "#070a14";
-const WHITE = "#f5faff";
+
+/* =========================================================
+   COLORS
+   ========================================================= */
+
+const WHITE = [245, 250, 255];
 
 const PLATFORM_COLORS = [
-    "#46dcff",
-    "#b964ff",
-    "#ffd750",
-    "#5affb4",
-    "#ff6996",
-    "#6496ff"
+    [70, 220, 255],
+    [185, 100, 255],
+    [255, 215, 80],
+    [90, 255, 180],
+    [255, 105, 150],
+    [100, 150, 255]
 ];
 
-const PLATFORM_DARK = "#192d46";
-const PLATFORM_HIGHLIGHT = "#b4f5ff";
+const PLATFORM_DARK = [25, 45, 70];
+const PLATFORM_HIGHLIGHT = [180, 245, 255];
 
-const GRAVITY = 1500;
-const BOUNCE_POWER = 980;
-const DIVE_BOUNCE_POWER = 1320;
-const MAX_FALL_SPEED = 1700;
-const DIVE_ACCELERATION = 2500;
 
-const AIR_ACCEL = 1850;
-const AIR_FRICTION = 0.985;
-const MAX_X_SPEED = 400;
+/* =========================================================
+   PHYSICS
+   ========================================================= */
 
-const WALL_RESTITUTION = 0.92;
-const PLATFORM_RESTITUTION = 0.98;
+const GRAVITY = 1450;
+
+const BOUNCE_POWER = 930;
+const DIVE_BOUNCE_POWER = 1280;
+
+const MAX_FALL_SPEED = 1650;
+const DIVE_ACCELERATION = 2300;
+
+const AIR_ACCEL = 1250;
+const AIR_FRICTION = 0.94;
+const MAX_X_SPEED = 315;
+
+const WALL_RESTITUTION = 0.90;
+const PLATFORM_RESTITUTION = 0.97;
 
 const BALL_RADIUS = 17;
-const PHYSICS_STEPS = 5;
 
-const PLATFORM_SPEED = 95;
-const MAX_PLATFORM_SPEED = 145;
+const PHYSICS_STEPS = 6;
 
-const PLATFORM_MOVE_SCORE = 500;
+const CELL = 34;
 
-const SPAWN_INTERVAL = 0.62;
-const PLATFORM_VERTICAL_GAP = 145;
-const DESPAWN_DISTANCE = 180;
+
+/* =========================================================
+   CAMERA
+   ========================================================= */
 
 const CAMERA_TARGET_Y = 320;
-const CAMERA_FOLLOW_SPEED = 7;
-
-let lastTime = performance.now();
+const CAMERA_FOLLOW_SPEED = 8;
 
 
-function clamp(value, minimum, maximum) {
-    return Math.max(minimum, Math.min(maximum, value));
-}
+/* =========================================================
+   PLATFORM GENERATION
+   ========================================================= */
+
+const SPAWN_INTERVAL = 0.48;
+const DESPAWN_DISTANCE = 250;
 
 
-function lerp(a, b, amount) {
-    return a + (b - a) * amount;
-}
+/* =========================================================
+   INPUT
+   ========================================================= */
 
+let keyLeft = false;
+let keyRight = false;
+let keyDown = false;
 
-/* -----------------------------
-   TOUCH CONTROLS
------------------------------ */
+let touchActive = false;
 
-let touchLeft = false;
-let touchRight = false;
-let touchDown = false;
+let touchX = 0;
+let touchY = 0;
 
 let touchStartX = 0;
 let touchStartY = 0;
-let touchActive = false;
 
-canvas.addEventListener("touchstart", function(event) {
+function pointerPosition(event) {
 
-    event.preventDefault();
+    const rect =
+        canvas.getBoundingClientRect();
 
-    const touch = event.touches[0];
+    return {
+        x:
+            (event.clientX - rect.left) /
+            scale,
 
-    touchStartX = touch.clientX;
-    touchStartY = touch.clientY;
+        y:
+            (event.clientY - rect.top) /
+            scale
+    };
+}
 
-    touchActive = true;
 
-}, { passive: false });
+/* ---------------------------------------------------------
+   TOUCH
+   --------------------------------------------------------- */
 
+canvas.addEventListener(
+    "pointerdown",
+    event => {
 
-canvas.addEventListener("touchmove", function(event) {
+        event.preventDefault();
 
-    event.preventDefault();
+        const p =
+            pointerPosition(event);
 
-    if (!touchActive) {
-        return;
+        touchActive = true;
+
+        touchStartX = p.x;
+        touchStartY = p.y;
+
+        touchX = p.x;
+        touchY = p.y;
+
+        try {
+            canvas.setPointerCapture(
+                event.pointerId
+            );
+        } catch (_) {}
+
+        if (
+            !game.started ||
+            game.gameOver
+        ) {
+            game.restart();
+        }
     }
+);
 
-    const touch = event.touches[0];
 
-    const dx = touch.clientX - touchStartX;
-    const dy = touch.clientY - touchStartY;
+canvas.addEventListener(
+    "pointermove",
+    event => {
 
-    touchLeft = false;
-    touchRight = false;
-    touchDown = false;
-
-    if (Math.abs(dx) > Math.abs(dy)) {
-
-        if (dx < -20) {
-            touchLeft = true;
+        if (!touchActive) {
+            return;
         }
 
-        if (dx > 20) {
-            touchRight = true;
+        event.preventDefault();
+
+        const p =
+            pointerPosition(event);
+
+        touchX = p.x;
+        touchY = p.y;
+    }
+);
+
+
+canvas.addEventListener(
+    "pointerup",
+    event => {
+
+        event.preventDefault();
+
+        touchActive = false;
+
+        try {
+            canvas.releasePointerCapture(
+                event.pointerId
+            );
+        } catch (_) {}
+    }
+);
+
+
+canvas.addEventListener(
+    "pointercancel",
+    () => {
+        touchActive = false;
+    }
+);
+
+
+/* ---------------------------------------------------------
+   KEYBOARD
+   --------------------------------------------------------- */
+
+window.addEventListener(
+    "keydown",
+    event => {
+
+        const key =
+            event.key.toLowerCase();
+
+        if (
+            event.key === "ArrowLeft" ||
+            key === "a"
+        ) {
+            keyLeft = true;
         }
 
-    } else {
+        if (
+            event.key === "ArrowRight" ||
+            key === "d"
+        ) {
+            keyRight = true;
+        }
 
-        if (dy > 20) {
-            touchDown = true;
+        if (
+            event.key === "ArrowDown"
+        ) {
+            keyDown = true;
+        }
+
+        if (
+            event.code === "Space"
+        ) {
+
+            if (
+                !game.started ||
+                game.gameOver
+            ) {
+                game.restart();
+            }
+        }
+
+        if (
+            event.key === "Escape"
+        ) {
+            location.reload();
         }
     }
+);
 
-}, { passive: false });
 
+window.addEventListener(
+    "keyup",
+    event => {
 
-canvas.addEventListener("touchend", function(event) {
+        const key =
+            event.key.toLowerCase();
 
-    event.preventDefault();
+        if (
+            event.key === "ArrowLeft" ||
+            key === "a"
+        ) {
+            keyLeft = false;
+        }
 
-    touchLeft = false;
-    touchRight = false;
-    touchDown = false;
+        if (
+            event.key === "ArrowRight" ||
+            key === "d"
+        ) {
+            keyRight = false;
+        }
 
-    touchActive = false;
-
-    if (!game.started || game.gameOver) {
-        game.restart();
+        if (
+            event.key === "ArrowDown"
+        ) {
+            keyDown = false;
+        }
     }
-
-}, { passive: false });
-
-
-canvas.addEventListener("touchcancel", function() {
-
-    touchLeft = false;
-    touchRight = false;
-    touchDown = false;
-
-    touchActive = false;
-
-});
+);
 
 
-/* -----------------------------
-   KEYBOARD CONTROLS
------------------------------ */
+/* =========================================================
+   HELPERS
+   ========================================================= */
 
-const keys = {};
-
-window.addEventListener("keydown", function(event) {
-
-    keys[event.key.toLowerCase()] = true;
-
-    if (event.key === "Escape") {
-        location.reload();
-    }
-
-    if (event.key === " " && (!game.started || game.gameOver)) {
-        game.restart();
-    }
-
-});
+function clamp(
+    value,
+    minimum,
+    maximum
+) {
+    return Math.max(
+        minimum,
+        Math.min(maximum, value)
+    );
+}
 
 
-window.addEventListener("keyup", function(event) {
+function lerp(
+    a,
+    b,
+    amount
+) {
+    return a +
+        (b - a) *
+        amount;
+}
 
-    keys[event.key.toLowerCase()] = false;
 
-});
+function color(c) {
+    return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
 
 
-/* -----------------------------
-   PARTICLE
------------------------------ */
+function rgba(c, alpha) {
+    return `rgba(
+        ${c[0]},
+        ${c[1]},
+        ${c[2]},
+        ${alpha}
+    )`;
+}
 
-class Particle {
 
-    constructor(x, y, color) {
+function roundRect(
+    x,
+    y,
+    width,
+    height,
+    radius
+) {
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+        x,
+        y,
+        width,
+        height,
+        radius
+    );
+
+    ctx.fill();
+}
+
+
+/* =========================================================
+   FLOATING TEXT
+   ========================================================= */
+
+class FloatingText {
+
+    constructor(
+        x,
+        y,
+        text,
+        colorValue,
+        size = 22
+    ) {
 
         this.x = x;
         this.y = y;
 
-        const angle = Math.random() * Math.PI * 2;
-        const speed = 70 + Math.random() * 200;
+        this.text = text;
 
-        this.vx = Math.cos(angle) * speed;
-        this.vy = Math.sin(angle) * speed;
+        this.color = colorValue;
 
-        this.life = 0.2 + Math.random() * 0.35;
-        this.maxLife = this.life;
+        this.size = size;
 
-        this.size = 2 + Math.random() * 3;
+        this.life = 0.75;
+        this.maxLife = 0.75;
 
-        this.color = color;
+        this.vy = -55;
     }
 
 
     update(dt) {
 
-        this.x += this.vx * dt;
-        this.y += this.vy * dt;
+        this.y +=
+            this.vy * dt;
 
-        this.vy += 450 * dt;
-
-        this.vx *= 0.985;
+        this.vy *= 0.97;
 
         this.life -= dt;
     }
@@ -281,155 +474,401 @@ class Particle {
             return;
         }
 
-        const alpha = this.life / this.maxLife;
+        const alpha =
+            this.life /
+            this.maxLife;
 
-        ctx.globalAlpha = alpha;
+        ctx.globalAlpha =
+            alpha;
 
-        ctx.fillStyle = this.color;
+        ctx.textAlign =
+            "center";
 
-        ctx.beginPath();
+        ctx.font =
+            `bold ${this.size}px Arial`;
 
-        ctx.arc(
+        ctx.fillStyle =
+            color(this.color);
+
+        ctx.fillText(
+            this.text,
             this.x,
-            this.y + cameraY,
-            this.size * alpha,
-            0,
-            Math.PI * 2
+            this.y + cameraY
         );
-
-        ctx.fill();
 
         ctx.globalAlpha = 1;
     }
 }
 
 
-/* -----------------------------
-   PLATFORM
------------------------------ */
+/* =========================================================
+   PARTICLE
+   ========================================================= */
 
-class Platform {
+class Particle {
 
-    constructor(x, y, width) {
+    constructor(
+        x,
+        y,
+        particleColor,
+        power = 1
+    ) {
 
         this.x = x;
         this.y = y;
 
-        this.width = width || (
-            Math.floor(Math.random() * 3) + 3
-        );
+        const angle =
+            Math.random() *
+            Math.PI * 2;
 
-        this.height = 1;
+        const speed =
+            (
+                70 +
+                Math.random() * 200
+            ) * power;
 
-        this.vx = -25 + Math.random() * 50;
+        this.vx =
+            Math.cos(angle) *
+            speed;
 
-        this.vy = PLATFORM_SPEED;
+        this.vy =
+            Math.sin(angle) *
+            speed;
+
+        this.life =
+            0.2 +
+            Math.random() * 0.35;
+
+        this.maxLife =
+            this.life;
+
+        this.size =
+            2 +
+            Math.random() * 4;
 
         this.color =
-            PLATFORM_COLORS[
-                Math.floor(
-                    Math.random() * PLATFORM_COLORS.length
+            particleColor;
+    }
+
+
+    update(dt) {
+
+        this.x +=
+            this.vx * dt;
+
+        this.y +=
+            this.vy * dt;
+
+        this.vy +=
+            450 * dt;
+
+        this.vx *=
+            0.985;
+
+        this.life -= dt;
+    }
+
+
+    draw(cameraY) {
+
+        if (this.life <= 0) {
+            return;
+        }
+
+        const alpha =
+            this.life /
+            this.maxLife;
+
+        const size =
+            Math.max(
+                1,
+                this.size * alpha
+            );
+
+        ctx.fillStyle =
+            rgba(
+                this.color,
+                alpha
+            );
+
+        ctx.beginPath();
+
+        ctx.arc(
+            this.x,
+            this.y + cameraY,
+            size,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fill();
+    }
+}
+
+
+/* =========================================================
+   PLATFORM
+   ========================================================= */
+
+class Platform {
+
+    constructor(
+        x,
+        y,
+        widthCells = 5,
+        moving = false,
+        bonus = false
+    ) {
+
+        this.x = x;
+        this.y = y;
+
+        this.widthCells =
+            widthCells;
+
+        this.width =
+            widthCells *
+            CELL;
+
+        this.height =
+            CELL;
+
+        this.moving =
+            moving;
+
+        this.bonus =
+            bonus;
+
+        this.vx =
+            moving
+                ? (
+                    Math.random() < 0.5
+                        ? -1
+                        : 1
+                ) *
+                (
+                    18 +
+                    Math.random() * 35
                 )
-            ];
+                : 0;
+
+        this.vy = 0;
+
+        this.color =
+            bonus
+                ? [255, 215, 80]
+                : PLATFORM_COLORS[
+                    Math.floor(
+                        Math.random() *
+                        PLATFORM_COLORS.length
+                    )
+                ];
     }
 
 
-    getWidth() {
-        return this.width * 34;
-    }
-
-
-    getRect() {
+    get rect() {
 
         return {
-            left: this.x - this.getWidth() / 2,
-            right: this.x + this.getWidth() / 2,
-            top: this.y - 17,
-            bottom: this.y + 17
+            left:
+                this.x -
+                this.width / 2,
+
+            right:
+                this.x +
+                this.width / 2,
+
+            top:
+                this.y -
+                CELL / 2,
+
+            bottom:
+                this.y +
+                CELL / 2
         };
     }
 
 
-    update(dt, speed, canMove) {
+    update(
+        dt,
+        verticalSpeed
+    ) {
 
-        if (!canMove) {
+        /*
+         * Platforms do not move at the
+         * beginning of the game.
 
-            this.vx = 0;
-            this.vy = 0;
+         * Their downward world movement
+         * gradually increases with height.
+         */
 
+        this.y +=
+            verticalSpeed *
+            dt;
+
+        if (!this.moving) {
             return;
         }
 
-        this.vy = speed;
+        this.x +=
+            this.vx * dt;
 
-        this.x += this.vx * dt;
-        this.y += this.vy * dt;
+        const half =
+            this.width / 2;
 
-        const halfWidth = this.getWidth() / 2;
+        if (
+            this.x - half < 8
+        ) {
 
-        if (this.x - halfWidth < 8) {
+            this.x =
+                8 + half;
 
-            this.x = 8 + halfWidth;
-            this.vx = Math.abs(this.vx);
+            this.vx =
+                Math.abs(this.vx);
+        }
 
-        } else if (this.x + halfWidth > WIDTH - 8) {
+        if (
+            this.x + half >
+            WIDTH - 8
+        ) {
 
-            this.x = WIDTH - 8 - halfWidth;
-            this.vx = -Math.abs(this.vx);
+            this.x =
+                WIDTH - 8 - half;
+
+            this.vx =
+                -Math.abs(this.vx);
         }
     }
 
 
     draw(cameraY) {
 
-        const rect = this.getRect();
+        const r =
+            this.rect;
 
-        const x = rect.left;
-        const y = rect.top + cameraY;
-        const width = rect.right - rect.left;
-        const height = 34;
+        const screenY =
+            r.top +
+            cameraY;
 
-        ctx.fillStyle = PLATFORM_DARK;
+        if (
+            screenY >
+            HEIGHT + 100 ||
+            screenY <
+            -100
+        ) {
+            return;
+        }
 
-        ctx.fillRect(
-            x,
-            y + 5,
-            width,
-            height
+        /*
+         * Dark backing.
+         */
+
+        ctx.fillStyle =
+            color(
+                PLATFORM_DARK
+            );
+
+        roundRect(
+            r.left,
+            screenY + 5,
+            this.width,
+            CELL,
+            7
         );
 
-        ctx.fillStyle = this.color;
+        /*
+         * Main platform.
+         */
 
-        ctx.fillRect(
-            x,
-            y,
-            width,
-            height
+        ctx.fillStyle =
+            color(
+                this.color
+            );
+
+        roundRect(
+            r.left,
+            screenY,
+            this.width,
+            CELL,
+            7
         );
 
-        ctx.strokeStyle = PLATFORM_HIGHLIGHT;
+        /*
+         * Highlight.
+         */
+
+        ctx.strokeStyle =
+            color(
+                PLATFORM_HIGHLIGHT
+            );
+
         ctx.lineWidth = 3;
 
         ctx.beginPath();
 
         ctx.moveTo(
-            x + 7,
-            y + 5
+            r.left + 8,
+            screenY + 5
         );
 
         ctx.lineTo(
-            x + width - 7,
-            y + 5
+            r.right - 8,
+            screenY + 5
         );
 
         ctx.stroke();
+
+        /*
+         * Moving platform indicator.
+         */
+
+        if (this.moving) {
+
+            ctx.fillStyle =
+                "rgba(255,255,255,0.55)";
+
+            ctx.beginPath();
+
+            ctx.arc(
+                this.x,
+                screenY + CELL / 2,
+                3,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.fill();
+        }
+
+        /*
+         * Bonus platform indicator.
+         */
+
+        if (this.bonus) {
+
+            ctx.strokeStyle =
+                "rgba(255,255,255,0.8)";
+
+            ctx.lineWidth = 2;
+
+            ctx.beginPath();
+
+            ctx.arc(
+                this.x,
+                screenY + CELL / 2,
+                CELL * 0.31,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.stroke();
+        }
     }
 }
 
 
-/* -----------------------------
+/* =========================================================
    PLAYER
------------------------------ */
+   ========================================================= */
 
 class Player {
 
@@ -440,13 +879,16 @@ class Player {
 
     reset() {
 
-        this.x = WIDTH / 2;
+        this.x =
+            WIDTH / 2;
+
         this.y = 520;
 
         this.vx = 0;
         this.vy = 0;
 
-        this.radius = BALL_RADIUS;
+        this.radius =
+            BALL_RADIUS;
 
         this.squash = 1;
         this.stretch = 1;
@@ -456,6 +898,9 @@ class Player {
         this.bounces = 0;
 
         this.diving = false;
+
+        this.lastCollision =
+            null;
     }
 
 
@@ -463,91 +908,182 @@ class Player {
 
         let direction = 0;
 
-        if (
-            keys["arrowleft"] ||
-            keys["a"] ||
-            touchLeft
-        ) {
+        /*
+         * Keyboard.
+         */
+
+        if (keyLeft) {
             direction -= 1;
         }
 
-        if (
-            keys["arrowright"] ||
-            keys["d"] ||
-            touchRight
-        ) {
+        if (keyRight) {
             direction += 1;
         }
 
-        this.vx += direction * AIR_ACCEL * dt;
+        /*
+         * Touch control.
 
-        this.vx *= AIR_FRICTION;
+         * Instead of simply deciding
+         * "left swipe / right swipe",
+         * the thumb position acts like
+         * a steering control.
 
-        this.vx = clamp(
-            this.vx,
-            -MAX_X_SPEED,
-            MAX_X_SPEED
-        );
+         * The ball is the center reference.
+         */
+
+        if (touchActive) {
+
+            const dx =
+                touchX -
+                this.x;
+
+            /*
+             * Small dead zone.
+             */
+
+            if (
+                Math.abs(dx) > 12
+            ) {
+
+                direction =
+                    clamp(
+                        dx / 105,
+                        -1,
+                        1
+                    );
+            } else {
+
+                direction = 0;
+            }
+        }
+
+        /*
+         * Horizontal movement.
+         */
+
+        this.vx +=
+            direction *
+            AIR_ACCEL *
+            dt;
+
+        /*
+         * Friction.
+
+         * More friction = easier
+         * to stop and correct.
+         */
+
+        this.vx *=
+            Math.pow(
+                AIR_FRICTION,
+                dt * 60
+            );
+
+        this.vx =
+            clamp(
+                this.vx,
+                -MAX_X_SPEED,
+                MAX_X_SPEED
+            );
+
+
+        /*
+         * Dive.
+
+         * Only available while falling.
+         */
 
         this.diving = false;
 
-        if (
-            (
-                keys["arrowdown"] ||
-                touchDown
-            ) &&
-            this.vy > 0
-        ) {
+        if (this.vy > 0) {
 
-            this.diving = true;
+            if (keyDown) {
+                this.diving = true;
+            }
 
-            this.vy += DIVE_ACCELERATION * dt;
+            if (
+                touchActive &&
+                touchY -
+                touchStartY >
+                55
+            ) {
+                this.diving = true;
+            }
 
-            this.vy = Math.min(
-                this.vy,
-                MAX_FALL_SPEED
-            );
+            if (this.diving) {
+
+                this.vy +=
+                    DIVE_ACCELERATION *
+                    dt;
+
+                this.vy =
+                    Math.min(
+                        this.vy,
+                        MAX_FALL_SPEED
+                    );
+            }
         }
     }
 
 
-    applyGravity(dt) {
+    gravity(dt) {
 
-        this.vy += GRAVITY * dt;
+        this.vy +=
+            GRAVITY * dt;
 
-        this.vy = Math.min(
-            this.vy,
-            MAX_FALL_SPEED
-        );
+        this.vy =
+            Math.min(
+                this.vy,
+                MAX_FALL_SPEED
+            );
     }
 
 
     move(dt) {
 
-        this.x += this.vx * dt;
-        this.y += this.vy * dt;
+        this.x +=
+            this.vx * dt;
+
+        this.y +=
+            this.vy * dt;
     }
 
 
     wallCollision() {
 
-        if (this.x - this.radius < 0) {
+        if (
+            this.x -
+            this.radius <
+            0
+        ) {
 
-            this.x = this.radius;
+            this.x =
+                this.radius;
 
             this.vx =
-                Math.abs(this.vx) *
+                Math.abs(
+                    this.vx
+                ) *
                 WALL_RESTITUTION;
 
             return true;
         }
 
-        if (this.x + this.radius > WIDTH) {
 
-            this.x = WIDTH - this.radius;
+        if (
+            this.x +
+            this.radius >
+            WIDTH
+        ) {
+
+            this.x =
+                WIDTH -
+                this.radius;
 
             this.vx =
-                -Math.abs(this.vx) *
+                -Math.abs(
+                    this.vx
+                ) *
                 WALL_RESTITUTION;
 
             return true;
@@ -557,20 +1093,32 @@ class Player {
     }
 
 
-    bounce(nx, ny, platformVelocityY) {
+    bounce(
+        nx,
+        ny,
+        platformVelocityY
+    ) {
 
-        const relativeVx = this.vx;
+        const relativeVx =
+            this.vx;
 
         const relativeVy =
-            this.vy - platformVelocityY;
+            this.vy -
+            platformVelocityY;
 
         const velocityIntoSurface =
             relativeVx * nx +
             relativeVy * ny;
 
-        if (velocityIntoSurface >= 0) {
-            return false;
+        if (
+            velocityIntoSurface >= 0
+        ) {
+            return null;
         }
+
+        /*
+         * Reflect velocity.
+         */
 
         this.vx -=
             2 *
@@ -582,66 +1130,128 @@ class Player {
             velocityIntoSurface *
             ny;
 
-        this.vx *= PLATFORM_RESTITUTION;
-        this.vy *= PLATFORM_RESTITUTION;
+        this.vx *=
+            PLATFORM_RESTITUTION;
 
-        if (ny < -0.5) {
+        this.vy *=
+            PLATFORM_RESTITUTION;
 
-            let bouncePower = BOUNCE_POWER;
 
-            if (this.diving) {
+        /*
+         * TOP
+         */
+
+        if (
+            ny < -0.5
+        ) {
+
+            const wasDive =
+                this.diving;
+
+            let bouncePower =
+                BOUNCE_POWER;
+
+            if (wasDive) {
 
                 const diveBonus =
                     Math.max(
                         0,
-                        this.vy + platformVelocityY
-                    ) * 0.45;
+                        this.vy
+                    ) *
+                    0.35;
 
-                bouncePower = Math.max(
-                    DIVE_BOUNCE_POWER,
-                    BOUNCE_POWER + diveBonus
-                );
+                bouncePower =
+                    Math.max(
+                        DIVE_BOUNCE_POWER,
+                        BOUNCE_POWER +
+                        diveBonus
+                    );
             }
 
-            this.vy = -bouncePower;
+            this.vy =
+                -bouncePower;
 
-            this.squash = 1.4;
-            this.stretch = 0.65;
+            this.squash =
+                1.4;
+
+            this.stretch =
+                0.65;
 
             this.bounces++;
 
             this.diving = false;
 
-            return true;
+            return {
+                type: "top",
+                dive: wasDive
+            };
         }
 
-        this.squash = 1.15;
-        this.stretch = 0.85;
 
-        return true;
+        /*
+         * BOTTOM
+         */
+
+        if (
+            ny > 0.5
+        ) {
+
+            this.squash =
+                1.18;
+
+            this.stretch =
+                0.85;
+
+            return {
+                type: "bottom",
+                dive: false
+            };
+        }
+
+
+        /*
+         * SIDE
+         */
+
+        this.squash =
+            1.12;
+
+        this.stretch =
+            0.88;
+
+        return {
+            type: "side",
+            dive: false
+        };
     }
 
 
-    updateVisuals(dt) {
+    updateVisuals() {
 
-        this.squash = lerp(
-            this.squash,
-            1,
-            Math.min(1, dt * 13)
-        );
+        this.squash =
+            lerp(
+                this.squash,
+                1,
+                0.18
+            );
 
-        this.stretch = lerp(
-            this.stretch,
-            1,
-            Math.min(1, dt * 13)
-        );
+        this.stretch =
+            lerp(
+                this.stretch,
+                1,
+                0.18
+            );
+
 
         this.trail.push({
             x: this.x,
             y: this.y
         });
 
-        if (this.trail.length > 14) {
+        if (
+            this.trail.length >
+            14
+        ) {
             this.trail.shift();
         }
     }
@@ -649,17 +1259,34 @@ class Player {
 
     draw(cameraY) {
 
-        for (let i = 0; i < this.trail.length; i++) {
+        /*
+         * Trail.
+         */
 
-            const point = this.trail[i];
+        for (
+            let i = 0;
+            i < this.trail.length;
+            i++
+        ) {
+
+            const point =
+                this.trail[i];
 
             const progress =
-                i / Math.max(1, this.trail.length);
+                i /
+                Math.max(
+                    1,
+                    this.trail.length
+                );
 
-            ctx.globalAlpha =
-                0.27 * progress;
-
-            ctx.fillStyle = "#50d2ff";
+            ctx.fillStyle =
+                `rgba(
+                    80,
+                    210,
+                    255,
+                    ${0.05 +
+                      progress * 0.14}
+                )`;
 
             ctx.beginPath();
 
@@ -668,7 +1295,8 @@ class Player {
                 point.y + cameraY,
                 Math.max(
                     2,
-                    this.radius * progress
+                    this.radius *
+                    progress
                 ),
                 0,
                 Math.PI * 2
@@ -677,7 +1305,6 @@ class Player {
             ctx.fill();
         }
 
-        ctx.globalAlpha = 1;
 
         const width =
             this.radius *
@@ -689,38 +1316,33 @@ class Player {
             2 *
             this.stretch;
 
-        const x =
-            this.x - width / 2;
-
-        const y =
+        const screenY =
             this.y +
-            cameraY -
-            height / 2;
+            cameraY;
+
+
+        /*
+         * Glow.
+         */
+
+        ctx.shadowBlur = 18;
+
+        ctx.shadowColor =
+            "rgba(80,220,255,0.65)";
+
+
+        /*
+         * Ball.
+         */
 
         ctx.fillStyle =
-            "rgba(80,220,255,0.18)";
+            "#f5faff";
 
         ctx.beginPath();
 
         ctx.ellipse(
             this.x,
-            this.y + cameraY,
-            width / 2 + 5,
-            height / 2 + 5,
-            0,
-            0,
-            Math.PI * 2
-        );
-
-        ctx.fill();
-
-        ctx.fillStyle = WHITE;
-
-        ctx.beginPath();
-
-        ctx.ellipse(
-            this.x,
-            this.y + cameraY,
+            screenY,
             width / 2,
             height / 2,
             0,
@@ -730,15 +1352,36 @@ class Player {
 
         ctx.fill();
 
-        ctx.fillStyle = "#50c8ff";
+
+        ctx.shadowBlur = 0;
+
+
+        /*
+         * Highlight.
+         */
+
+        ctx.fillStyle =
+            "#50c8ff";
 
         ctx.beginPath();
 
         ctx.ellipse(
-            x + width * 0.38,
-            y + height * 0.25,
-            Math.max(3, width * 0.15),
-            Math.max(3, height * 0.12),
+            this.x -
+                width * 0.18,
+
+            screenY -
+                height * 0.22,
+
+            Math.max(
+                3,
+                width * 0.15
+            ),
+
+            Math.max(
+                3,
+                height * 0.12
+            ),
+
             0,
             0,
             Math.PI * 2
@@ -749,70 +1392,97 @@ class Player {
 }
 
 
-/* -----------------------------
+/* =========================================================
    GAME
------------------------------ */
+   ========================================================= */
 
 class Game {
 
     constructor() {
 
-        this.player = new Player();
+        this.player =
+            new Player();
 
         this.platforms = [];
 
         this.particles = [];
 
-        this.cameraY = 0;
+        this.floatingTexts = [];
+
+
+        /*
+         * Run stats.
+         */
 
         this.score = 0;
-        this.best = 0;
 
-        this.heightReached = 0;
+        this.height = 0;
+
+        this.flow = 0;
+
+        this.maxFlow = 0;
+
+
+        /*
+         * Records.
+         */
+
+        this.bestScore =
+            Number(
+                localStorage.getItem(
+                    "bounceBestScore"
+                ) || 0
+            );
+
+        this.bestHeight =
+            Number(
+                localStorage.getItem(
+                    "bounceBestHeight"
+                ) || 0
+            );
+
+
+        /*
+         * World.
+         */
+
+        this.cameraY = 0;
 
         this.spawnTimer = 0;
 
-        this.gameOver = false;
+        this.nextPlatformY =
+            -100;
+
+
+        /*
+         * State.
+         */
 
         this.started = false;
 
+        this.gameOver = false;
+
+
+        /*
+         * Effects.
+         */
+
         this.shake = 0;
 
-        this.nextPlatformY = 100;
+        this.flash = 0;
+
+
+        /*
+         * Climb tracking.
+         */
+
+        this.previousHeight = 0;
+
+        this.previousHeightTime =
+            performance.now() / 1000;
+
 
         this.spawnInitialPlatforms();
-    }
-
-
-    spawnInitialPlatforms() {
-
-        this.platforms = [];
-
-        const startingPlatforms = [
-
-            [WIDTH * 0.50, 625, 5],
-
-            [WIDTH * 0.30, 480, 4],
-
-            [WIDTH * 0.68, 335, 5],
-
-            [WIDTH * 0.42, 190, 4],
-
-            [WIDTH * 0.72, 45, 5]
-        ];
-
-        for (const platform of startingPlatforms) {
-
-            this.platforms.push(
-                new Platform(
-                    platform[0],
-                    platform[1],
-                    platform[2]
-                )
-            );
-        }
-
-        this.nextPlatformY = -100;
     }
 
 
@@ -820,11 +1490,23 @@ class Game {
 
         this.player.reset();
 
+        this.platforms = [];
+
+        this.particles = [];
+
+        this.floatingTexts = [];
+
+
         this.cameraY = 0;
 
         this.score = 0;
 
-        this.heightReached = 0;
+        this.height = 0;
+
+        this.flow = 0;
+
+        this.maxFlow = 0;
+
 
         this.spawnTimer = 0;
 
@@ -832,140 +1514,552 @@ class Game {
 
         this.started = true;
 
+
         this.shake = 0;
 
-        this.particles = [];
+        this.flash = 0;
+
+
+        this.previousHeight = 0;
+
+        this.previousHeightTime =
+            performance.now() / 1000;
+
 
         this.spawnInitialPlatforms();
     }
 
 
-    getDifficulty() {
+    difficulty() {
 
         return clamp(
-            this.heightReached / 5000,
+            this.height / 5000,
             0,
             1
         );
     }
 
 
-    getPlatformSpeed() {
+    /*
+     * Platform world movement.
+
+     * This starts at zero so the
+     * opening feels calm.
+     */
+
+    platformSpeed() {
+
+        const d =
+            this.difficulty();
 
         return lerp(
-            PLATFORM_SPEED,
-            MAX_PLATFORM_SPEED,
-            this.getDifficulty()
+            0,
+            110,
+            d
         );
+    }
+
+
+    /*
+     * Moving-platform chance.
+     */
+
+    movingChance() {
+
+        const d =
+            this.difficulty();
+
+        if (
+            this.height < 900
+        ) {
+            return 0;
+        }
+
+        return lerp(
+            0.05,
+            0.35,
+            clamp(
+                (d - 0.18) /
+                0.82,
+                0,
+                1
+            )
+        );
+    }
+
+
+    spawnInitialPlatforms() {
+
+        const starting = [
+
+            [
+                WIDTH * 0.50,
+                625,
+                7
+            ],
+
+            [
+                WIDTH * 0.43,
+                490,
+                6
+            ],
+
+            [
+                WIDTH * 0.57,
+                355,
+                6
+            ],
+
+            [
+                WIDTH * 0.46,
+                220,
+                6
+            ],
+
+            [
+                WIDTH * 0.55,
+                85,
+                6
+            ]
+        ];
+
+
+        for (
+            const platform
+            of starting
+        ) {
+
+            this.platforms.push(
+                new Platform(
+                    platform[0],
+                    platform[1],
+                    platform[2],
+                    false,
+                    false
+                )
+            );
+        }
+
+
+        this.nextPlatformY =
+            -65;
+    }
+
+
+    /*
+     * Find the highest platform
+     * that is close to the spawn area.
+     */
+
+    getHighestPlatform() {
+
+        if (
+            this.platforms.length === 0
+        ) {
+            return null;
+        }
+
+        let highest =
+            this.platforms[0];
+
+        for (
+            const platform
+            of this.platforms
+        ) {
+
+            if (
+                platform.y <
+                highest.y
+            ) {
+                highest =
+                    platform;
+            }
+        }
+
+        return highest;
     }
 
 
     spawnPlatform() {
 
-        const x =
-            70 +
-            Math.random() *
-            (WIDTH - 140);
+        const d =
+            this.difficulty();
 
-        const widths = [3, 4, 4, 5];
+        const previous =
+            this.getHighestPlatform();
 
-        const width =
-            widths[
-                Math.floor(
-                    Math.random() * widths.length
-                )
-            ];
+
+        /*
+         * Calculate a reachable X range.
+
+         * We intentionally limit the
+         * horizontal shift.
+         */
+
+        let x;
+
+        if (previous) {
+
+            const maxShift =
+                lerp(
+                    70,
+                    145,
+                    d
+                );
+
+            x =
+                previous.x +
+                (
+                    Math.random() * 2 -
+                    1
+                ) *
+                maxShift;
+
+            x =
+                clamp(
+                    x,
+                    65,
+                    WIDTH - 65
+                );
+
+        } else {
+
+            x =
+                70 +
+                Math.random() *
+                (WIDTH - 140);
+        }
+
+
+        /*
+         * Platform width.
+
+         * The game starts generous and
+         * becomes more precise.
+         */
+
+        let width;
+
+        if (
+            this.height < 700
+        ) {
+
+            width = 6;
+
+        } else if (
+            this.height < 1600
+        ) {
+
+            width =
+                Math.random() <
+                0.75
+                    ? 5
+                    : 6;
+
+        } else if (
+            this.height < 3000
+        ) {
+
+            width =
+                Math.random() <
+                0.65
+                    ? 5
+                    : 4;
+
+        } else {
+
+            width =
+                [
+                    3,
+                    4,
+                    4,
+                    5
+                ][
+                    Math.floor(
+                        Math.random() * 4
+                    )
+                ];
+        }
+
+
+        /*
+         * Moving platforms.
+         */
+
+        const moving =
+            Math.random() <
+            this.movingChance();
+
+
+        /*
+         * Bonus platform.
+
+         * Rare enough to feel special.
+         */
+
+        const bonus =
+            Math.random() <
+            0.08;
+
 
         this.platforms.push(
             new Platform(
                 x,
                 this.nextPlatformY,
-                width
+                width,
+                moving,
+                bonus
             )
         );
 
+
+        /*
+         * Vertical spacing.
+
+         * Gets slightly more demanding
+         * with height.
+         */
+
+        const gap =
+            lerp(
+                128,
+                158,
+                d
+            ) +
+            (
+                Math.random() * 24 -
+                12
+            );
+
+
         this.nextPlatformY -=
-            PLATFORM_VERTICAL_GAP +
-            (-20 + Math.random() * 50);
+            gap;
     }
 
 
-    bounceEffect(x, y, color) {
+    /*
+     * Particles.
+     */
 
-        for (let i = 0; i < 18; i++) {
+    addParticles(
+        x,
+        y,
+        particleColor,
+        amount,
+        power = 1
+    ) {
+
+        for (
+            let i = 0;
+            i < amount;
+            i++
+        ) {
 
             this.particles.push(
                 new Particle(
                     x,
                     y,
-                    color
+                    particleColor,
+                    power
                 )
             );
         }
-
-        this.shake = 3;
     }
 
+
+    /*
+     * Floating notification.
+     */
+
+    floatText(
+        x,
+        y,
+        text,
+        textColor,
+        size = 22
+    ) {
+
+        this.floatingTexts.push(
+            new FloatingText(
+                x,
+                y,
+                text,
+                textColor,
+                size
+            )
+        );
+    }
+
+
+    /*
+     * Bounce effects.
+     */
+
+    bounceEffect(
+        x,
+        y,
+        platform,
+        type
+    ) {
+
+        if (
+            type === "corner"
+        ) {
+
+            this.addParticles(
+                x,
+                y,
+                [255, 235, 120],
+                32,
+                1.4
+            );
+
+            this.shake = 7;
+
+            this.flash = 0.10;
+
+        } else if (
+            type === "edge"
+        ) {
+
+            this.addParticles(
+                x,
+                y,
+                [255, 215, 80],
+                25,
+                1.15
+            );
+
+            this.shake = 5;
+
+        } else if (
+            type === "dive"
+        ) {
+
+            this.addParticles(
+                x,
+                y,
+                [255, 105, 150],
+                28,
+                1.3
+            );
+
+            this.shake = 6;
+
+        } else if (
+            type === "flow"
+        ) {
+
+            this.addParticles(
+                x,
+                y,
+                [90, 255, 220],
+                28,
+                1.2
+            );
+
+            this.shake = 4;
+
+            this.flash = 0.06;
+
+        } else {
+
+            this.addParticles(
+                x,
+                y,
+                platform.color,
+                16,
+                1
+            );
+
+            this.shake = 2;
+        }
+    }
+
+
+    /*
+     * Death effect.
+     */
 
     deathEffect() {
 
-        for (let i = 0; i < 45; i++) {
+        this.addParticles(
+            this.player.x,
+            this.player.y,
+            [70, 220, 255],
+            55,
+            1.4
+        );
 
-            this.particles.push(
-                new Particle(
-                    this.player.x,
-                    this.player.y,
-                    "#46dcff"
-                )
-            );
-        }
-
-        this.shake = 10;
+        this.shake = 12;
     }
 
 
-    collidePlatform(player, platform) {
+    /* =====================================================
+       COLLISION
+       ===================================================== */
 
-        const rect = platform.getRect();
+    collidePlatform(
+        player,
+        platform
+    ) {
+
+        const r =
+            platform.rect;
+
+
+        /*
+         * Closest point on rectangle.
+         */
 
         const closestX =
             clamp(
                 player.x,
-                rect.left,
-                rect.right
+                r.left,
+                r.right
             );
 
         const closestY =
             clamp(
                 player.y,
-                rect.top,
-                rect.bottom
+                r.top,
+                r.bottom
             );
 
+
         const dx =
-            player.x - closestX;
+            player.x -
+            closestX;
 
         const dy =
-            player.y - closestY;
+            player.y -
+            closestY;
 
-        const distanceSq =
-            dx * dx +
-            dy * dy;
 
         if (
-            distanceSq >
-            player.radius * player.radius
+            dx * dx +
+            dy * dy >
+            player.radius *
+            player.radius
         ) {
             return false;
         }
 
+
+        /*
+         * Penetration depths.
+
+         * These allow us to determine
+         * which face was hit.
+         */
+
         const leftPen =
             player.x +
             player.radius -
-            rect.left;
+            r.left;
 
         const rightPen =
-            rect.right -
+            r.right -
             (
                 player.x -
                 player.radius
@@ -974,38 +2068,97 @@ class Game {
         const topPen =
             player.y +
             player.radius -
-            rect.top;
+            r.top;
 
         const bottomPen =
-            rect.bottom -
+            r.bottom -
             (
                 player.y -
                 player.radius
             );
 
-        const penetrations = [
 
-            [leftPen, -1, 0],
+        const minimumPenetration =
+            Math.min(
+                leftPen,
+                rightPen,
+                topPen,
+                bottomPen
+            );
 
-            [rightPen, 1, 0],
 
-            [topPen, 0, -1],
+        let nx = 0;
+        let ny = 0;
 
-            [bottomPen, 0, 1]
-        ];
 
-        penetrations.sort(
-            (a, b) => a[0] - b[0]
-        );
+        if (
+            minimumPenetration ===
+            topPen
+        ) {
 
-        const penetration =
-            penetrations[0][0];
+            nx = 0;
+            ny = -1;
 
-        const nx =
-            penetrations[0][1];
+        } else if (
+            minimumPenetration ===
+            bottomPen
+        ) {
 
-        const ny =
-            penetrations[0][2];
+            nx = 0;
+            ny = 1;
+
+        } else if (
+            minimumPenetration ===
+            leftPen
+        ) {
+
+            nx = -1;
+            ny = 0;
+
+        } else {
+
+            nx = 1;
+            ny = 0;
+        }
+
+
+        /*
+         * Corner detection.
+
+         * A top landing very close to
+         * either edge counts as a
+         * difficult precision landing.
+         */
+
+        const nearLeft =
+            Math.abs(
+                player.x -
+                r.left
+            ) < 14;
+
+        const nearRight =
+            Math.abs(
+                player.x -
+                r.right
+            ) < 14;
+
+        const nearTop =
+            Math.abs(
+                player.y -
+                r.top
+            ) < 14;
+
+        const isCorner =
+            (
+                nearLeft ||
+                nearRight
+            ) &&
+            nearTop;
+
+
+        /*
+         * Relative velocity.
+         */
 
         const relativeVx =
             player.vx;
@@ -1014,43 +2167,439 @@ class Game {
             player.vy -
             platform.vy;
 
-        const velocityIntoSurface =
+        const into =
             relativeVx * nx +
             relativeVy * ny;
 
-        if (velocityIntoSurface >= 0) {
+
+        /*
+         * Already moving away.
+         */
+
+        if (
+            into >= 0
+        ) {
             return false;
         }
 
+
+        /*
+         * Push the player out
+         * of the platform.
+         */
+
         player.x +=
             nx *
-            Math.max(penetration, 0);
+            Math.max(
+                minimumPenetration,
+                0
+            );
 
         player.y +=
             ny *
-            Math.max(penetration, 0);
+            Math.max(
+                minimumPenetration,
+                0
+            );
 
-        const hit =
+
+        const result =
             player.bounce(
                 nx,
                 ny,
                 platform.vy
             );
 
-        if (hit) {
+
+        if (!result) {
+            return false;
+        }
+
+
+        /* -------------------------------------------------
+           TOP LANDING
+           ------------------------------------------------- */
+
+        if (
+            result.type === "top"
+        ) {
+
+            const centerDistance =
+                Math.abs(
+                    player.x -
+                    platform.x
+                );
+
+            const halfWidth =
+                platform.width /
+                2;
+
+            const edgeDistance =
+                halfWidth -
+                centerDistance;
+
+
+            let landingType =
+                "normal";
+
+
+            /*
+             * Corner is the rarest
+             * and highest-value landing.
+             */
+
+            if (
+                isCorner
+            ) {
+
+                landingType =
+                    "corner";
+
+            } else if (
+                edgeDistance <
+                28
+            ) {
+
+                landingType =
+                    "edge";
+            }
+
+
+            /*
+             * Base score.
+             */
+
+            let points = 10;
+
+
+            /*
+             * Precision bonuses.
+             */
+
+            if (
+                landingType === "edge"
+            ) {
+
+                points = 25;
+
+                this.floatText(
+                    player.x,
+                    player.y - 30,
+                    "EDGE!",
+                    [255, 215, 80],
+                    20
+                );
+            }
+
+
+            if (
+                landingType === "corner"
+            ) {
+
+                points = 40;
+
+                this.floatText(
+                    player.x,
+                    player.y - 30,
+                    "CORNER!",
+                    [255, 235, 120],
+                    22
+                );
+            }
+
+
+            /*
+             * Dive bonus.
+
+             * Dive is a separate skill.
+             */
+
+            if (
+                result.dive
+            ) {
+
+                points += 30;
+
+                this.floatText(
+                    player.x,
+                    player.y - 35,
+                    "DIVE!",
+                    [255, 105, 150],
+                    19
+                );
+            }
+
+
+            /*
+             * Bonus platform.
+             */
+
+            if (
+                platform.bonus
+            ) {
+
+                points += 50;
+
+                this.floatText(
+                    player.x,
+                    player.y - 55,
+                    "+50",
+                    [255, 225, 90],
+                    20
+                );
+            }
+
+
+            /* -------------------------------------------------
+               FLOW
+               ------------------------------------------------- */
+
+            /*
+             * A clean landing means:
+             *
+             * - not a dive
+             * - not a corner
+             * - controlled horizontal speed
+             *
+             * Edge landings are still allowed to
+             * continue Flow because they are skillful.
+             */
+
+            const clean =
+                !result.dive &&
+                Math.abs(
+                    player.vx
+                ) < 260;
+
+
+            const flowEligible =
+                clean ||
+                landingType === "edge" ||
+                landingType === "corner";
+
+
+            if (
+                flowEligible
+            ) {
+
+                this.flow =
+                    clamp(
+                        this.flow + 1,
+                        0,
+                        10
+                    );
+
+            } else {
+
+                this.flow =
+                    Math.max(
+                        0,
+                        this.flow - 1
+                    );
+            }
+
+
+            this.maxFlow =
+                Math.max(
+                    this.maxFlow,
+                    this.flow
+                );
+
+
+            /*
+             * Flow bonus.
+
+             * This is deliberately a bonus,
+             * not a giant score multiplier.
+             */
+
+            if (
+                this.flow >= 2
+            ) {
+
+                const flowBonus =
+                    Math.min(
+                        45,
+                        (
+                            this.flow -
+                            1
+                        ) * 5
+                    );
+
+                points +=
+                    flowBonus;
+
+
+                if (
+                    this.flow >= 4
+                ) {
+
+                    this.floatText(
+                        player.x,
+                        player.y - 25,
+                        `FLOW x${this.flow}`,
+                        [90, 255, 220],
+                        19
+                    );
+                }
+            }
+
+
+            /*
+             * Fast-climb bonus.
+
+             * Measure actual height gained
+             * between checkpoints.
+             */
+
+            const now =
+                performance.now() /
+                1000;
+
+            const elapsed =
+                Math.max(
+                    0.1,
+                    now -
+                    this.previousHeightTime
+                );
+
+            const heightGained =
+                this.height -
+                this.previousHeight;
+
+            const climbRate =
+                heightGained /
+                elapsed;
+
+
+            if (
+                climbRate > 220 &&
+                this.flow >= 3
+            ) {
+
+                const fastBonus =
+                    Math.min(
+                        100,
+                        Math.floor(
+                            climbRate /
+                            8
+                        )
+                    );
+
+                points +=
+                    fastBonus;
+
+
+                this.floatText(
+                    player.x,
+                    player.y - 52,
+                    "FAST CLIMB",
+                    [110, 235, 255],
+                    17
+                );
+            }
+
+
+            /*
+             * Update climb checkpoint.
+             */
+
+            this.previousHeight =
+                this.height;
+
+            this.previousHeightTime =
+                now;
+
+
+            /*
+             * Add score.
+             */
+
+            this.score +=
+                Math.floor(
+                    points
+                );
+
+
+            /*
+             * Effects.
+             */
+
+            let effectType =
+                "normal";
+
+
+            if (
+                landingType === "corner"
+            ) {
+
+                effectType =
+                    "corner";
+
+            } else if (
+                landingType === "edge"
+            ) {
+
+                effectType =
+                    "edge";
+
+            } else if (
+                result.dive
+            ) {
+
+                effectType =
+                    "dive";
+
+            } else if (
+                this.flow >= 4
+            ) {
+
+                effectType =
+                    "flow";
+            }
+
 
             this.bounceEffect(
                 player.x,
                 player.y,
-                platform.color
+                platform,
+                effectType
             );
 
-            this.score++;
+
+            return true;
         }
 
-        return hit;
+
+        /* -------------------------------------------------
+           SIDE / BOTTOM
+           ------------------------------------------------- */
+
+        /*
+         * These collisions are valid and
+         * remain part of the game.
+
+         * However, they interrupt the clean
+         * upward Flow.
+         */
+
+        this.flow = 0;
+
+        this.addParticles(
+            player.x,
+            player.y,
+            platform.color,
+            10,
+            0.8
+        );
+
+        return true;
     }
 
+
+    /* =====================================================
+       CAMERA
+       ===================================================== */
 
     updateCamera(dt) {
 
@@ -1058,16 +2607,21 @@ class Game {
             this.player.y +
             this.cameraY;
 
-        if (screenY < CAMERA_TARGET_Y) {
 
-            const targetCamera =
+        if (
+            screenY <
+            CAMERA_TARGET_Y
+        ) {
+
+            const target =
                 CAMERA_TARGET_Y -
                 this.player.y;
+
 
             this.cameraY =
                 lerp(
                     this.cameraY,
-                    targetCamera,
+                    target,
                     Math.min(
                         1,
                         dt *
@@ -1076,52 +2630,85 @@ class Game {
                 );
         }
 
+
         this.cameraY =
             Math.max(
-                this.cameraY,
-                0
+                0,
+                this.cameraY
             );
     }
 
 
+    /* =====================================================
+       UPDATE
+       ===================================================== */
+
     update(dt) {
 
-        if (this.gameOver) {
+        if (
+            this.gameOver
+        ) {
 
-            this.updateParticles(dt);
+            this.updateParticles(
+                dt
+            );
+
+            this.shake =
+                Math.max(
+                    0,
+                    this.shake -
+                    dt * 20
+                );
 
             return;
         }
 
-        this.player.control(dt);
 
-        const platformSpeed =
-            this.getPlatformSpeed();
+        /*
+         * Player input.
+         */
 
-        const canMove =
-            this.score >=
-            PLATFORM_MOVE_SCORE;
+        this.player.control(
+            dt
+        );
 
-        for (const platform of this.platforms) {
+
+        /*
+         * Platforms.
+         */
+
+        const speed =
+            this.platformSpeed();
+
+
+        for (
+            const platform
+            of this.platforms
+        ) {
 
             platform.update(
                 dt,
-                platformSpeed,
-                canMove
+                speed
             );
         }
+
+
+        /*
+         * Physics substeps.
+         */
 
         const subDt =
             dt /
             PHYSICS_STEPS;
 
+
         for (
-            let i = 0;
-            i < PHYSICS_STEPS;
-            i++
+            let step = 0;
+            step < PHYSICS_STEPS;
+            step++
         ) {
 
-            this.player.applyGravity(
+            this.player.gravity(
                 subDt
             );
 
@@ -1129,19 +2716,42 @@ class Game {
                 subDt
             );
 
+
+            /*
+             * Walls.
+             */
+
             if (
                 this.player.wallCollision()
             ) {
 
-                this.bounceEffect(
+                this.addParticles(
                     this.player.x,
                     this.player.y,
-                    "#46dcff"
+                    [70, 220, 255],
+                    10,
+                    0.8
                 );
+
+                /*
+                 * Wall contact interrupts
+                 * Flow because it isn't a
+                 * clean platform ascent.
+                 */
+
+                this.flow = 0;
             }
 
+
+            /*
+             * Platforms.
+
+             * Only collide once per substep.
+             */
+
             for (
-                const platform of this.platforms
+                const platform
+                of this.platforms
             ) {
 
                 if (
@@ -1155,7 +2765,22 @@ class Game {
             }
         }
 
-        this.updateCamera(dt);
+
+        /*
+         * Camera.
+         */
+
+        this.updateCamera(
+            dt
+        );
+
+
+        /*
+         * Height.
+
+         * Height is measured from the
+         * original starting Y position.
+         */
 
         const currentHeight =
             Math.max(
@@ -1166,27 +2791,65 @@ class Game {
                 )
             );
 
-        this.heightReached =
-            Math.max(
-                this.heightReached,
-                currentHeight
-            );
 
-        this.score =
-            Math.max(
-                this.score,
-                Math.floor(
-                    this.heightReached / 5
+        if (
+            currentHeight >
+            this.height
+        ) {
+
+            this.height =
+                currentHeight;
+        }
+
+
+        /*
+         * Best records.
+
+         * Save only when a record
+         * actually changes.
+         */
+
+        if (
+            this.height >
+            this.bestHeight
+        ) {
+
+            this.bestHeight =
+                this.height;
+
+            localStorage.setItem(
+                "bounceBestHeight",
+                String(
+                    this.bestHeight
                 )
             );
+        }
 
-        this.best =
-            Math.max(
-                this.best,
-                this.score
+
+        if (
+            this.score >
+            this.bestScore
+        ) {
+
+            this.bestScore =
+                this.score;
+
+            localStorage.setItem(
+                "bounceBestScore",
+                String(
+                    this.bestScore
+                )
             );
+        }
 
-        this.spawnTimer += dt;
+
+        /*
+         * Platform spawning.
+         */
+
+        this.spawnTimer +=
+            dt;
+
 
         while (
             this.spawnTimer >=
@@ -1199,10 +2862,16 @@ class Game {
             this.spawnPlatform();
         }
 
+
+        /*
+         * Remove old platforms.
+         */
+
         const despawnY =
             -this.cameraY +
             HEIGHT +
             DESPAWN_DISTANCE;
+
 
         this.platforms =
             this.platforms.filter(
@@ -1211,21 +2880,42 @@ class Game {
                     despawnY
             );
 
+
+        /*
+         * Death.
+
+         * Give the player a little
+         * forgiveness below the screen.
+         */
+
         const playerScreenY =
             this.player.y +
             this.cameraY;
 
+
         if (
             playerScreenY >
-            HEIGHT + 60
+            HEIGHT + 70
         ) {
 
             this.die();
         }
 
-        this.updateParticles(dt);
 
-        this.player.updateVisuals(dt);
+        /*
+         * Effects.
+         */
+
+        this.updateParticles(
+            dt
+        );
+
+        this.updateFloatingTexts(
+            dt
+        );
+
+        this.player.updateVisuals();
+
 
         this.shake =
             Math.max(
@@ -1233,118 +2923,614 @@ class Game {
                 this.shake -
                 dt * 20
             );
-    }
 
-
-    die() {
-
-        if (this.gameOver) {
-            return;
-        }
-
-        this.gameOver = true;
-
-        this.best =
+        this.flash =
             Math.max(
-                this.best,
-                this.score
+                0,
+                this.flash -
+                dt
             );
-
-        this.deathEffect();
     }
 
 
     updateParticles(dt) {
 
         for (
-            const particle of this.particles
+            let i =
+                this.particles.length - 1;
+            i >= 0;
+            i--
         ) {
 
-            particle.update(dt);
-        }
+            const particle =
+                this.particles[i];
 
-        this.particles =
-            this.particles.filter(
-                particle =>
-                    particle.life > 0
+            particle.update(
+                dt
             );
+
+            if (
+                particle.life <= 0
+            ) {
+
+                this.particles.splice(
+                    i,
+                    1
+                );
+            }
+        }
     }
 
 
-    drawBackground() {
+    updateFloatingTexts(dt) {
 
         for (
-            let y = 0;
-            y < HEIGHT;
-            y += 8
+            let i =
+                this.floatingTexts.length - 1;
+            i >= 0;
+            i--
         ) {
 
-            const amount =
-                y / HEIGHT;
+            const text =
+                this.floatingTexts[i];
 
-            const r =
-                Math.floor(
-                    7 + amount * 8
+            text.update(
+                dt
+            );
+
+            if (
+                text.life <= 0
+            ) {
+
+                this.floatingTexts.splice(
+                    i,
+                    1
                 );
+            }
+        }
+    }
 
-            const g =
-                Math.floor(
-                    10 + amount * 9
-                );
 
-            const b =
-                Math.floor(
-                    20 + amount * 20
-                );
+    /* =====================================================
+       DEATH
+       ===================================================== */
 
-            ctx.fillStyle =
-                `rgb(${r},${g},${b})`;
+    die() {
 
-            ctx.fillRect(
-                0,
-                y,
-                WIDTH,
-                8
+        if (
+            this.gameOver
+        ) {
+            return;
+        }
+
+
+        this.gameOver = true;
+
+
+        /*
+         * Final records.
+         */
+
+        if (
+            this.score >
+            this.bestScore
+        ) {
+
+            this.bestScore =
+                this.score;
+
+            localStorage.setItem(
+                "bounceBestScore",
+                String(
+                    this.bestScore
+                )
             );
         }
 
-        let random = 12345;
 
-        function randomNumber() {
+        if (
+            this.height >
+            this.bestHeight
+        ) {
 
-            random =
-                (random * 9301 + 49297) %
-                233280;
+            this.bestHeight =
+                this.height;
 
-            return random / 233280;
+            localStorage.setItem(
+                "bounceBestHeight",
+                String(
+                    this.bestHeight
+                )
+            );
         }
 
-        ctx.fillStyle =
-            "#1c2d41";
 
-        for (let i = 0; i < 70; i++) {
+        this.deathEffect();
+    }
+
+
+    /* =====================================================
+       BACKGROUND
+       ===================================================== */
+
+    drawBackground() {
+
+        const gradient =
+            ctx.createLinearGradient(
+                0,
+                0,
+                0,
+                HEIGHT
+            );
+
+
+        gradient.addColorStop(
+            0,
+            "#070a14"
+        );
+
+        gradient.addColorStop(
+            1,
+            "#0f1728"
+        );
+
+
+        ctx.fillStyle =
+            gradient;
+
+        ctx.fillRect(
+            0,
+            0,
+            WIDTH,
+            HEIGHT
+        );
+
+
+        /*
+         * Simple stars.
+
+         * Deterministic positions so
+         * they don't jump every frame.
+         */
+
+        for (
+            let i = 0;
+            i < 75;
+            i++
+        ) {
 
             const x =
-                randomNumber() * WIDTH;
-
-            const baseY =
-                randomNumber() * HEIGHT;
+                (
+                    i * 83
+                ) % WIDTH;
 
             const y =
                 (
-                    baseY +
-                    this.cameraY * 0.15
+                    i * 137 +
+                    Math.floor(
+                        this.cameraY *
+                        0.15
+                    )
                 ) % HEIGHT;
+
+
+            ctx.fillStyle =
+                "rgba(100,140,180,0.35)";
+
 
             ctx.fillRect(
                 x,
                 y,
-                2,
-                2
+                1,
+                1
             );
         }
     }
 
+
+    /* =====================================================
+       HUD
+       ===================================================== */
+
+    drawHUD() {
+
+        ctx.textAlign =
+            "center";
+
+
+        /*
+         * Score.
+         */
+
+        ctx.font =
+            "bold 38px Arial";
+
+        ctx.fillStyle =
+            color(WHITE);
+
+        ctx.fillText(
+            this.score.toLocaleString(),
+            WIDTH / 2,
+            48
+        );
+
+
+        ctx.font =
+            "15px Arial";
+
+        ctx.fillStyle =
+            "rgba(160,180,200,0.9)";
+
+        ctx.fillText(
+            "SCORE",
+            WIDTH / 2,
+            69
+        );
+
+
+        /*
+         * Height.
+         */
+
+        ctx.font =
+            "bold 21px Arial";
+
+        ctx.fillStyle =
+            "rgba(220,235,250,0.95)";
+
+        ctx.fillText(
+            `HEIGHT  ${this.height.toLocaleString()}`,
+            WIDTH / 2,
+            99
+        );
+
+
+        /*
+         * Flow.
+
+         * Only display it when active.
+         */
+
+        if (
+            this.flow > 0
+        ) {
+
+            ctx.font =
+                "bold 23px Arial";
+
+
+            ctx.fillStyle =
+                this.flow >= 7
+                    ? "#ffe06a"
+                    : "#62f5d0";
+
+
+            ctx.fillText(
+                `FLOW x${this.flow}`,
+                WIDTH / 2,
+                132
+            );
+        }
+
+
+        /*
+         * Dive indicator.
+         */
+
+        if (
+            this.player.diving
+        ) {
+
+            ctx.font =
+                "bold 18px Arial";
+
+            ctx.fillStyle =
+                "#ff7896";
+
+            ctx.textAlign =
+                "right";
+
+            ctx.fillText(
+                "DIVE!",
+                WIDTH - 15,
+                38
+            );
+        }
+    }
+
+
+    /* =====================================================
+       START SCREEN
+       ===================================================== */
+
+    drawStartScreen() {
+
+        ctx.fillStyle =
+            "rgba(0,0,0,0.12)";
+
+        ctx.fillRect(
+            0,
+            0,
+            WIDTH,
+            HEIGHT
+        );
+
+
+        ctx.textAlign =
+            "center";
+
+
+        ctx.font =
+            "bold 66px Arial";
+
+        ctx.fillStyle =
+            color(WHITE);
+
+        ctx.fillText(
+            "BOUNCE",
+            WIDTH / 2,
+            300
+        );
+
+
+        ctx.font =
+            "bold 25px Arial";
+
+        ctx.fillStyle =
+            "#46dcff";
+
+        ctx.fillText(
+            "DRAG LEFT / RIGHT",
+            WIDTH / 2,
+            390
+        );
+
+
+        ctx.font =
+            "16px Arial";
+
+        ctx.fillStyle =
+            "#ff7896";
+
+        ctx.fillText(
+            "DRAG DOWN WHILE FALLING TO DIVE",
+            WIDTH / 2,
+            430
+        );
+
+
+        ctx.font =
+            "17px Arial";
+
+        ctx.fillStyle =
+            "#a0afbf";
+
+        ctx.fillText(
+            "Clean landings build FLOW.",
+            WIDTH / 2,
+            485
+        );
+
+
+        ctx.fillText(
+            "Edge and corner landings score more.",
+            WIDTH / 2,
+            512
+        );
+
+
+        ctx.font =
+            "bold 20px Arial";
+
+        ctx.fillStyle =
+            "#e0e8f0";
+
+        ctx.fillText(
+            "TAP TO START",
+            WIDTH / 2,
+            570
+        );
+    }
+
+
+    /* =====================================================
+       GAME OVER SCREEN
+       ===================================================== */
+
+    drawGameOverScreen() {
+
+        ctx.fillStyle =
+            "rgba(0,0,0,0.72)";
+
+        ctx.fillRect(
+            0,
+            0,
+            WIDTH,
+            HEIGHT
+        );
+
+
+        ctx.textAlign =
+            "center";
+
+
+        /*
+         * Title.
+         */
+
+        ctx.font =
+            "bold 56px Arial";
+
+        ctx.fillStyle =
+            color(WHITE);
+
+        ctx.fillText(
+            "GAME OVER",
+            WIDTH / 2,
+            265
+        );
+
+
+        /*
+         * Score.
+         */
+
+        ctx.font =
+            "bold 43px Arial";
+
+        ctx.fillStyle =
+            "#46dcff";
+
+        ctx.fillText(
+            this.score.toLocaleString(),
+            WIDTH / 2,
+            340
+        );
+
+
+        ctx.font =
+            "15px Arial";
+
+        ctx.fillStyle =
+            "#91a4b8";
+
+        ctx.fillText(
+            "SCORE",
+            WIDTH / 2,
+            365
+        );
+
+
+        /*
+         * Height.
+
+         * This is deliberately prominent.
+         */
+
+        ctx.font =
+            "bold 36px Arial";
+
+        ctx.fillStyle =
+            color(WHITE);
+
+        ctx.fillText(
+            this.height.toLocaleString(),
+            WIDTH / 2,
+            425
+        );
+
+
+        ctx.font =
+            "15px Arial";
+
+        ctx.fillStyle =
+            "#91a4b8";
+
+        ctx.fillText(
+            "HEIGHT",
+            WIDTH / 2,
+            450
+        );
+
+
+        /*
+         * Best score.
+         */
+
+        ctx.font =
+            "bold 25px Arial";
+
+        ctx.fillStyle =
+            "#c2ccd8";
+
+        ctx.fillText(
+            this.bestScore.toLocaleString(),
+            WIDTH / 2,
+            505
+        );
+
+
+        ctx.font =
+            "14px Arial";
+
+        ctx.fillStyle =
+            "#7d91a5";
+
+        ctx.fillText(
+            "BEST SCORE",
+            WIDTH / 2,
+            526
+        );
+
+
+        /*
+         * Best height.
+         */
+
+        ctx.font =
+            "bold 27px Arial";
+
+        ctx.fillStyle =
+            "#c2ccd8";
+
+        ctx.fillText(
+            this.bestHeight.toLocaleString(),
+            WIDTH / 2,
+            570
+        );
+
+
+        ctx.font =
+            "14px Arial";
+
+        ctx.fillStyle =
+            "#7d91a5";
+
+        ctx.fillText(
+            "BEST HEIGHT",
+            WIDTH / 2,
+            591
+        );
+
+
+        /*
+         * Flow.
+         */
+
+        ctx.font =
+            "bold 20px Arial";
+
+        ctx.fillStyle =
+            "#62f5d0";
+
+        ctx.fillText(
+            `MAX FLOW x${this.maxFlow}`,
+            WIDTH / 2,
+            640
+        );
+
+
+        /*
+         * Retry.
+         */
+
+        ctx.font =
+            "bold 18px Arial";
+
+        ctx.fillStyle =
+            color(WHITE);
+
+        ctx.fillText(
+            "TAP ANYWHERE TO RETRY",
+            WIDTH / 2,
+            705
+        );
+    }
+
+
+    /* =====================================================
+       DRAW
+       ===================================================== */
 
     draw() {
 
@@ -1355,29 +3541,36 @@ class Game {
             HEIGHT
         );
 
+
+        /*
+         * Background.
+         */
+
         this.drawBackground();
 
+
+        /*
+         * Platforms.
+         */
+
         for (
-            const platform of this.platforms
+            const platform
+            of this.platforms
         ) {
 
-            const screenY =
-                platform.y +
-                this.cameraY;
-
-            if (
-                screenY > -100 &&
-                screenY < HEIGHT + 100
-            ) {
-
-                platform.draw(
-                    this.cameraY
-                );
-            }
+            platform.draw(
+                this.cameraY
+            );
         }
 
+
+        /*
+         * Particles.
+         */
+
         for (
-            const particle of this.particles
+            const particle
+            of this.particles
         ) {
 
             particle.draw(
@@ -1385,113 +3578,82 @@ class Game {
             );
         }
 
+
+        /*
+         * Floating scoring text.
+         */
+
+        for (
+            const floatingText
+            of this.floatingTexts
+        ) {
+
+            floatingText.draw(
+                this.cameraY
+            );
+        }
+
+
+        /*
+         * Player.
+         */
+
         this.player.draw(
             this.cameraY
         );
 
-        ctx.fillStyle = WHITE;
 
-        ctx.font =
-            "34px Arial";
-
-        ctx.textAlign =
-            "center";
-
-        ctx.fillText(
-            this.score,
-            WIDTH / 2,
-            50
-        );
-
-        ctx.fillStyle =
-            "#7d91a5";
-
-        ctx.font =
-            "24px Arial";
-
-        ctx.fillText(
-            "BEST  " + this.best,
-            WIDTH / 2,
-            82
-        );
-
-        if (this.player.diving) {
-
-            ctx.fillStyle =
-                "#ff7896";
-
-            ctx.font =
-                "24px Arial";
-
-            ctx.textAlign =
-                "right";
-
-            ctx.fillText(
-                "DIVE!",
-                WIDTH - 15,
-                50
-            );
-        }
-
-        if (!this.started) {
-
-            ctx.textAlign =
-                "center";
-
-            ctx.fillStyle =
-                WHITE;
-
-            ctx.font =
-                "70px Arial";
-
-            ctx.fillText(
-                "BOUNCE",
-                WIDTH / 2,
-                HEIGHT / 2 - 100
-            );
-
-            ctx.fillStyle =
-                "#46dcff";
-
-            ctx.font =
-                "34px Arial";
-
-            ctx.fillText(
-                "SWIPE LEFT / RIGHT",
-                WIDTH / 2,
-                HEIGHT / 2 - 20
-            );
-
-            ctx.fillStyle =
-                "#ff7896";
-
-            ctx.font =
-                "24px Arial";
-
-            ctx.fillText(
-                "SWIPE DOWN TO DIVE",
-                WIDTH / 2,
-                HEIGHT / 2 + 25
-            );
-
-            ctx.fillStyle =
-                "#8c9bab";
-
-            ctx.fillText(
-                "TAP TO START",
-                WIDTH / 2,
-                HEIGHT / 2 + 85
-            );
-        }
-
+        /*
+         * HUD.
+         */
 
         if (
-            this.started &&
+            this.started
+        ) {
+
+            this.drawHUD();
+        }
+
+
+        /*
+         * Start screen.
+         */
+
+        if (
+            !this.started
+        ) {
+
+            this.drawStartScreen();
+        }
+
+
+        /*
+         * Game over.
+         */
+
+        if (
             this.gameOver
         ) {
 
+            this.drawGameOverScreen();
+        }
+
+
+        /*
+         * Flash.
+         */
+
+        if (
+            this.flash > 0
+        ) {
+
             ctx.fillStyle =
-                "rgba(0,0,0,0.65)";
+                `rgba(
+                    255,
+                    255,
+                    255,
+                    ${this.flash}
+                )`;
 
             ctx.fillRect(
                 0,
@@ -1499,68 +3661,41 @@ class Game {
                 WIDTH,
                 HEIGHT
             );
-
-            ctx.textAlign =
-                "center";
-
-            ctx.fillStyle =
-                WHITE;
-
-            ctx.font =
-                "70px Arial";
-
-            ctx.fillText(
-                "GAME OVER",
-                WIDTH / 2,
-                HEIGHT / 2 - 70
-            );
-
-            ctx.fillStyle =
-                "#46dcff";
-
-            ctx.font =
-                "34px Arial";
-
-            ctx.fillText(
-                "SCORE  " + this.score,
-                WIDTH / 2,
-                HEIGHT / 2
-            );
-
-            ctx.fillStyle =
-                "#9baabd";
-
-            ctx.font =
-                "24px Arial";
-
-            ctx.fillText(
-                "BEST  " + this.best,
-                WIDTH / 2,
-                HEIGHT / 2 + 45
-            );
-
-            ctx.fillStyle =
-                WHITE;
-
-            ctx.fillText(
-                "TAP TO RESTART",
-                WIDTH / 2,
-                HEIGHT / 2 + 100
-            );
         }
     }
 }
 
 
-const game = new Game();
+/* =========================================================
+   START GAME
+   ========================================================= */
+
+const game =
+    new Game();
 
 
-function gameLoop(time) {
+/* =========================================================
+   GAME LOOP
+   ========================================================= */
+
+let lastTime =
+    performance.now();
+
+
+function gameLoop(now) {
 
     let dt =
-        (time - lastTime) / 1000;
+        (now - lastTime) /
+        1000;
 
-    lastTime = time;
+    lastTime =
+        now;
+
+
+    /*
+     * Prevent giant physics steps
+     * if the phone pauses briefly.
+     */
 
     dt =
         Math.min(
@@ -1568,9 +3703,54 @@ function gameLoop(time) {
             0.025
         );
 
-    game.update(dt);
 
-    game.draw();
+    game.update(
+        dt
+    );
+
+
+    /*
+     * Screen shake.
+
+     * The actual game coordinates
+     * remain 480 × 800.
+     */
+
+    if (
+        game.shake > 0
+    ) {
+
+        const shakeX =
+            (
+                Math.random() * 2 -
+                1
+            ) *
+            game.shake;
+
+        const shakeY =
+            (
+                Math.random() * 2 -
+                1
+            ) *
+            game.shake;
+
+
+        ctx.save();
+
+        ctx.translate(
+            shakeX,
+            shakeY
+        );
+
+        game.draw();
+
+        ctx.restore();
+
+    } else {
+
+        game.draw();
+    }
+
 
     requestAnimationFrame(
         gameLoop
@@ -1578,7 +3758,9 @@ function gameLoop(time) {
 }
 
 
-requestAnimationFrame(gameLoop);
+requestAnimationFrame(
+    gameLoop
+);
 
 </script>
 
