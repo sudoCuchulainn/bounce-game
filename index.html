@@ -181,8 +181,6 @@ let pointerY = 0;
 
 let diveRequested = false;
 
-const TUTORIAL_DURATION = 15.5;
-
 
 /* =========================================================
    AUDIO
@@ -1842,151 +1840,167 @@ class Game {
     updateTutorial(dt) {
         this.tutorialTime += dt;
 
-        if (this.tutorialTime >= TUTORIAL_DURATION) {
+        const t = this.tutorialTime;
+        const points = [
+            { x: WIDTH / 2, y: 575 },
+            { x: 185, y: 365 },
+            { x: 340, y: 255 },
+            { x: 120, y: 155 },
+            { x: 320, y: 85 },
+            { x: 250, y: HEIGHT + 80 }
+        ];
+
+        let a = points[0];
+        let b = points[1];
+        let progress = 0;
+
+        if (t < 2.5) {
+            progress = t / 2.5;
+            a = points[0];
+            b = points[1];
+        } else if (t < 5) {
+            progress = (t - 2.5) / 2.5;
+            a = points[1];
+            b = points[2];
+        } else if (t < 7.5) {
+            progress = (t - 5) / 2.5;
+            a = points[2];
+            b = points[3];
+        } else if (t < 10) {
+            progress = (t - 7.5) / 2.5;
+            a = points[3];
+            b = points[4];
+        } else {
+            progress = Math.min(1, (t - 10) / 3);
+            a = points[4];
+            b = points[5];
+        }
+
+        const ease = progress * progress * (3 - 2 * progress);
+        this.player.x = lerp(a.x, b.x, ease);
+        this.player.y = lerp(a.y, b.y, ease);
+        this.player.previousX = this.player.x;
+        this.player.previousY = this.player.y;
+        this.player.vx = 0;
+        this.player.vy = 0;
+        this.player.diving = t >= 2.5 && t < 5;
+        this.player.ghost = t >= 5 && t < 7.5 ? 2 : 0;
+        this.player.invulnerable = t >= 7.5 && t < 10 ? 2 : 0;
+        this.flow = t >= 10 ? 10 : Math.min(10, Math.floor(t / 0.55));
+
+        if (t >= 13) {
+            this.player.invulnerable = 0;
+            this.flow = 10;
+        }
+
+        if (t >= 14.5) {
+            this.player.ghost = 0;
+            this.player.invulnerable = 0;
+            this.flow = 0;
+        }
+
+        if (t >= 15.5) {
             this.skipTutorial();
         }
     }
 
+    tutorialOrb(x, y, type) {
+        const orb = new Orb(x, y, type);
+        orb.life = 1;
+        orb.draw(0);
+    }
+
     tutorialScreen() {
         const t = this.tutorialTime;
-        const phase = Math.min(6, Math.floor(t / 2.35));
-        const local = t % 2.35;
+        const fade = t > 14 ? Math.max(0, 1 - (t - 14) / 1.5) : 1;
+        let title = "DRAG TO STEER";
+        let detail = "Move left and right to line up your next landing.";
+
+        if (t >= 2.5 && t < 5) {
+            title = "DIVE";
+            detail = "Swipe down while falling to dive faster.";
+        } else if (t >= 5 && t < 7.5) {
+            title = "GHOST";
+            detail = "Hit a Ghost and it launches you straight upward.";
+        } else if (t >= 7.5 && t < 10) {
+            title = "SAFETY";
+            detail = "Green Safety makes the fire harmless for a moment.";
+        } else if (t >= 10 && t < 13) {
+            title = "FLOW 10";
+            detail = "Clean landings build Flow. Max Flow gives you the gold glow.";
+        } else if (t >= 13) {
+            title = "THAT'S THE RUN";
+            detail = "Keep the rhythm. Eventually, the fire catches you.";
+        }
 
         ctx.save();
-        ctx.fillStyle = "rgba(3,7,14,0.96)";
-        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        ctx.globalAlpha = fade;
+
+        // Keep the actual game visible underneath. This is an overlay, not a fake
+        // replacement scene, so the tutorial teaches the same visual language.
+        ctx.fillStyle = "rgba(3,7,14,0.20)";
+        ctx.fillRect(0, 0, WIDTH, 185);
 
         ctx.textAlign = "center";
-        ctx.font = "bold 13px Arial";
-        ctx.fillStyle = "rgba(170,195,215,0.72)";
-        ctx.fillText("FIRST RUN · QUICK TUTORIAL", WIDTH / 2, 42);
-
-        ctx.font = "bold 34px Arial";
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = "rgba(70,220,255,0.28)";
+        ctx.font = "bold 27px Arial";
         ctx.fillStyle = WHITE;
-        ctx.fillText("LEARN THE FLOW", WIDTH / 2, 88);
+        ctx.fillText(title, WIDTH / 2, 47);
+        ctx.shadowBlur = 0;
 
         ctx.font = "15px Arial";
-        ctx.fillStyle = "rgba(185,205,220,0.82)";
-        ctx.fillText("Watch one ideal run. Then you play.", WIDTH / 2, 116);
+        ctx.fillStyle = "rgba(220,235,245,0.90)";
+        ctx.fillText(detail, WIDTH / 2, 74);
 
-        const stages = [
-            ["DRAG", "Drag left and right to steer.", "#50dcff"],
-            ["DIVE", "Swipe down while falling to dive.", "#ff789c"],
-            ["GHOST", "Hit a ghost for a straight-up boost.", "#ffe06a"],
-            ["SAFE", "Grab safety. Fire cannot kill you.", "#72ffc2"],
-            ["FLOW 10", "Clean landings build Flow to 10.", "#ffd85a"],
-            ["MASTER", "Perfect. Edge. Ghost. Dive. Keep climbing.", "#ffd85a"],
-            ["DEATH", "Eventually, the fire wins. Your run begins.", "#ff7888"]
-        ];
+        ctx.font = "11px Arial";
+        ctx.fillStyle = "rgba(165,190,210,0.72)";
+        ctx.fillText("WATCH THE DEMONSTRATION", WIDTH / 2, 100);
 
-        const title = stages[Math.min(phase, stages.length - 1)];
-        ctx.font = "bold 22px Arial";
-        ctx.fillStyle = title[2];
-        ctx.fillText(title[0], WIDTH / 2, 154);
-        ctx.font = "14px Arial";
-        ctx.fillStyle = "rgba(225,235,245,0.9)";
-        ctx.fillText(title[1], WIDTH / 2, 178);
-
-        const floorY = 650;
-        ctx.strokeStyle = "rgba(60,190,230,0.25)";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(50, floorY);
-        ctx.lineTo(WIDTH - 50, floorY);
-        ctx.stroke();
-
-        const p = this.tutorialPlayerPosition(phase, local);
-        this.drawTutorialPlatform(80, floorY, 145);
-        this.drawTutorialPlatform(315, floorY - 115, 120);
-        this.drawTutorialPlatform(155, floorY - 235, 125);
-        this.drawTutorialPlatform(335, floorY - 355, 100);
-
-        if (phase === 2) {
-            this.drawTutorialOrb(235, 420, "ghost");
-        }
-        if (phase === 3) {
-            this.drawTutorialOrb(235, 420, "invulnerable");
+        // Directional hand/gesture cue.
+        if (t < 2.5) {
+            const handX = lerp(180, 350, (Math.sin(t * 3) + 1) / 2);
+            ctx.strokeStyle = "rgba(255,255,255,0.82)";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(handX - 28, 150);
+            ctx.lineTo(handX + 28, 150);
+            ctx.stroke();
+            ctx.fillStyle = WHITE;
+            ctx.beginPath();
+            ctx.moveTo(handX + 28, 150);
+            ctx.lineTo(handX + 18, 143);
+            ctx.lineTo(handX + 18, 157);
+            ctx.closePath();
+            ctx.fill();
         }
 
-        if (phase >= 4 && phase <= 5) {
-            for (let i = 0; i < 10; i++) {
-                const x = 145 + i * 21;
-                ctx.fillStyle = i < Math.min(10, Math.floor((local / 2.35) * 10) + 5) ? "#ffd85a" : "rgba(255,215,90,0.12)";
-                ctx.beginPath();
-                ctx.arc(x, 220, 5, 0, Math.PI * 2);
-                ctx.fill();
-            }
+        if (t >= 5 && t < 7.5) {
+            this.tutorialOrb(340, 285, "ghost");
         }
 
-        if (phase >= 6) {
-            const fireY = 690;
-            ctx.fillStyle = "rgba(40,220,200,0.28)";
-            ctx.fillRect(0, fireY, WIDTH, HEIGHT - fireY);
-            ctx.fillStyle = "rgba(255,70,90,0.9)";
-            ctx.fillRect(0, fireY, WIDTH, 3);
+        if (t >= 7.5 && t < 10) {
+            this.tutorialOrb(120, 185, "invulnerable");
         }
 
-        this.drawTutorialPlayer(p.x, p.y, phase);
+        if (t >= 10 && t < 13) {
+            ctx.font = "bold 18px Arial";
+            ctx.fillStyle = "#ffe16a";
+            ctx.shadowBlur = 14;
+            ctx.shadowColor = "rgba(255,210,70,0.8)";
+            ctx.fillText("MAX FLOW", WIDTH / 2, 135);
+            ctx.shadowBlur = 0;
+        }
 
-        ctx.font = "bold 15px Arial";
-        ctx.fillStyle = "rgba(240,250,255,0.9)";
-        ctx.fillText("TAP OR PRESS SPACE TO SKIP", WIDTH / 2, 748);
+        if (t >= 13) {
+            ctx.font = "bold 15px Arial";
+            ctx.fillStyle = "rgba(255,230,150,0.95)";
+            ctx.fillText("GOLD AURA = FLOW 10", WIDTH / 2, 135);
+        }
+
         ctx.font = "12px Arial";
-        ctx.fillStyle = "rgba(145,170,190,0.65)";
-        ctx.fillText("The tutorial plays once on this device.", WIDTH / 2, 772);
-        ctx.restore();
-    }
-
-    tutorialPlayerPosition(phase, local) {
-        const u = local / 2.35;
-        const points = [
-            { x: 145, y: 620 },
-            { x: 360, y: 505 },
-            { x: 235, y: 390 },
-            { x: 245, y: 300 },
-            { x: 155, y: 240 },
-            { x: 340, y: 160 },
-            { x: 240, y: 640 }
-        ];
-        const a = points[Math.min(phase, points.length - 1)];
-        const b = points[Math.min(phase + 1, points.length - 1)];
-        return {
-            x: lerp(a.x, b.x, u),
-            y: lerp(a.y, b.y, u)
-        };
-    }
-
-    drawTutorialPlatform(x, y, width) {
-        ctx.save();
-        ctx.shadowBlur = 12;
-        ctx.shadowColor = "rgba(70,220,255,0.32)";
-        ctx.fillStyle = "#183047";
-        roundedRect(x - width / 2, y - 14, width, 28, 7);
-        ctx.fillStyle = "#46dcff";
-        roundedRect(x - width / 2, y - 18, width, 10, 5);
-        ctx.restore();
-    }
-
-    drawTutorialOrb(x, y, type) {
-        ctx.save();
-        ctx.globalCompositeOperation = "lighter";
-        ctx.shadowBlur = 28;
-        ctx.shadowColor = type === "ghost" ? "rgba(255,205,55,0.9)" : "rgba(70,255,185,0.9)";
-        ctx.fillStyle = type === "ghost" ? "#ffe06a" : "#72ffc2";
-        ctx.beginPath();
-        ctx.arc(x, y, 11, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-    }
-
-    drawTutorialPlayer(x, y, phase) {
-        ctx.save();
-        ctx.shadowBlur = phase >= 4 ? 32 : 20;
-        ctx.shadowColor = phase >= 4 ? "rgba(255,215,80,0.9)" : "rgba(80,220,255,0.7)";
-        ctx.fillStyle = phase >= 4 ? "#ffe16a" : "#f5faff";
-        ctx.beginPath();
-        ctx.arc(x, y, 17, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillStyle = "rgba(185,205,220,0.68)";
+        ctx.fillText("TAP OR PRESS SPACE TO SKIP", WIDTH / 2, HEIGHT - 25);
         ctx.restore();
     }
 
@@ -3617,30 +3631,9 @@ class Game {
     }
 
 
-    maxFlowAura() {
-        const pulse = 0.5 + Math.sin(this.time * 4) * 0.08;
-        const glow = ctx.createRadialGradient(
-            WIDTH / 2,
-            HEIGHT / 2,
-            130,
-            WIDTH / 2,
-            HEIGHT / 2,
-            420
-        );
-        glow.addColorStop(0, "rgba(255,210,70,0)");
-        glow.addColorStop(0.62, `rgba(255,205,55,${0.035 * pulse})`);
-        glow.addColorStop(0.86, `rgba(255,190,40,${0.11 * pulse})`);
-        glow.addColorStop(1, `rgba(255,170,25,${0.22 * pulse})`);
-        ctx.save();
-        ctx.globalCompositeOperation = "lighter";
-        ctx.fillStyle = glow;
-        ctx.fillRect(0, 0, WIDTH, HEIGHT);
-        ctx.restore();
-    }
-
     /* =====================================================
        HUD
-    =====================================================
+    ===================================================== */
 
     hud() {
         ctx.save();
@@ -3736,7 +3729,7 @@ class Game {
         ctx.shadowBlur = 0;
 
         ctx.font =
-            "bold 24px Arial";
+            "bold 23px Arial";
 
         ctx.fillStyle =
             "#50dcff";
@@ -4179,10 +4172,6 @@ class Game {
 
         this.background();
 
-        if (this.flow >= 10 && this.started && !this.gameOver) {
-            this.maxFlowAura();
-        }
-
         for (const platform of this.platforms) {
             platform.draw(
                 this.cameraY
@@ -4211,15 +4200,32 @@ class Game {
             );
         }
 
-        this.drawFire();
-
-        if (this.started) {
-            this.hud();
+        if (this.flow >= 10 && this.started && !this.gameOver) {
+            const pulse = 0.5 + Math.sin(this.time * 4) * 0.08;
+            const glow = ctx.createRadialGradient(
+                WIDTH / 2, HEIGHT / 2, 130,
+                WIDTH / 2, HEIGHT / 2, 420
+            );
+            glow.addColorStop(0, "rgba(255,210,70,0)");
+            glow.addColorStop(0.62, `rgba(255,205,55,${0.035 * pulse})`);
+            glow.addColorStop(0.86, `rgba(255,190,40,${0.11 * pulse})`);
+            glow.addColorStop(1, `rgba(255,170,25,${0.22 * pulse})`);
+            ctx.save();
+            ctx.globalCompositeOperation = "lighter";
+            ctx.fillStyle = glow;
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            ctx.restore();
         }
+
+        this.drawFire();
 
         if (this.tutorialActive) {
             this.tutorialScreen();
-        } else if (!this.started) {
+        } else if (this.started) {
+            this.hud();
+        }
+
+        if (!this.tutorialActive && !this.started) {
             this.startScreen();
         }
 
