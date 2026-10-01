@@ -66,7 +66,7 @@ body {
 
 /* =========================================================
    BOUNCE
-   Stable single-file build
+   Revised build
    ========================================================= */
 
 
@@ -137,7 +137,13 @@ const PLATFORM_DARK = [24, 40, 65];
 
 const GOLD = [255, 211, 55];
 
-const GHOST_WHITE = [235, 250, 255];
+const GHOST_WHITE = [245, 250, 255];
+
+const GHOST_GOLD = [255, 205, 55];
+
+const PHASE_WHITE = [250, 250, 255];
+
+const PHASE_RED = [255, 70, 90];
 
 const FIRE_GREEN = [55, 255, 155];
 
@@ -177,24 +183,6 @@ const PHYSICS_STEPS = 6;
    PLATFORM GENERATION
 ========================================================= */
 
-/*
- * The platforms are intentionally separated.
- *
- * A jump has room to breathe.
- *
- * The visual pattern can still be:
- *
- * LEFT
- *
- *                         RIGHT
- *
- *              CENTER
- *
- * LEFT
- *
- *                         RIGHT
- */
-
 const MIN_VERTICAL_GAP = 190;
 
 const MAX_VERTICAL_GAP = 225;
@@ -230,16 +218,30 @@ const GOLD_ORB_SCORE = 50;
 
 const INVULNERABLE_DURATION = 4.5;
 
+/*
+ * White + gold:
+ * Full ghost ability.
+ */
 const GHOST_DURATION = 2.5;
+
+/*
+ * White + red:
+ * One-platform phase.
+ */
+const PHASE_DURATION = 1.35;
+
+const GHOST_BOOST = 620;
+
+const PHASE_BOOST = 220;
 
 const ORB_RADIUS = 10;
 
 
 /* =========================================================
-   BOTTOM FIRE
+   BOTTOM HAZARD
 ========================================================= */
 
-const FIRE_HEIGHT = 55;
+const FIRE_HEIGHT = 48;
 
 
 /* =========================================================
@@ -256,11 +258,6 @@ let pointerStartY = 0;
 
 let pointerX = 0;
 let pointerY = 0;
-
-/*
- * Dive is now an ACTION rather than a permanent
- * state tied to holding a finger down.
- */
 
 let diveRequested = false;
 
@@ -309,14 +306,7 @@ function initAudio() {
                 .catch(() => {});
         }
 
-    } catch (error) {
-
-        /*
-         * Audio is optional.
-         * Never allow audio failure to
-         * break the game.
-         */
-    }
+    } catch (error) {}
 }
 
 
@@ -480,6 +470,30 @@ function soundGhost() {
 }
 
 
+function soundPhase() {
+
+    tone(
+        280,
+        0.10,
+        "triangle",
+        0.45,
+        300
+    );
+
+    setTimeout(() => {
+
+        tone(
+            620,
+            0.13,
+            "triangle",
+            0.4,
+            -120
+        );
+
+    }, 45);
+}
+
+
 function soundFireSave() {
 
     tone(
@@ -537,19 +551,15 @@ function haptic(pattern) {
 }
 
 
-/*
- * Keep haptic calls very sparse.
- *
- * Some browsers simply ignore these.
- */
-
 function hapticBounce() {
     haptic(12);
 }
 
+
 function hapticOrb() {
     haptic(22);
 }
+
 
 function hapticBig() {
     haptic([20, 25, 35]);
@@ -617,11 +627,6 @@ canvas.addEventListener(
         pointerY =
             p.y;
 
-
-        /*
-         * Start / restart.
-         */
-
         if (
             !game.started ||
             game.gameOver
@@ -663,11 +668,6 @@ canvas.addEventListener(
 
         event.preventDefault();
 
-        /*
-         * Determine whether this was
-         * a deliberate downward swipe.
-         */
-
         if (pointerActive) {
 
             const dx =
@@ -677,15 +677,6 @@ canvas.addEventListener(
             const dy =
                 pointerY -
                 pointerStartY;
-
-            /*
-             * Dive requires a real downward
-             * gesture AND the player must be
-             * falling.
-             *
-             * Releasing the finger ends the
-             * gesture immediately.
-             */
 
             if (
                 dy > 60 &&
@@ -742,14 +733,7 @@ window.addEventListener(
             event.key === "ArrowDown"
         ) {
 
-            /*
-             * Keyboard dive is also an action.
-             */
-
-            if (
-                !event.repeat
-            ) {
-
+            if (!event.repeat) {
                 diveRequested = true;
             }
         }
@@ -771,7 +755,6 @@ window.addEventListener(
                 game.restart();
             }
         }
-
     }
 );
 
@@ -898,11 +881,6 @@ function roundedRect(
     height,
     radius
 ) {
-
-    /*
-     * Deliberately avoid ctx.roundRect().
-     * This is safer across older browsers.
-     */
 
     const r =
         Math.min(
@@ -1349,11 +1327,6 @@ class Platform {
             return;
         }
 
-
-        /*
-         * Glow.
-         */
-
         ctx.save();
 
         ctx.shadowBlur =
@@ -1366,11 +1339,6 @@ class Platform {
                 this.color,
                 0.38
             );
-
-
-        /*
-         * Dark body.
-         */
 
         ctx.fillStyle =
             color(
@@ -1385,11 +1353,6 @@ class Platform {
             7
         );
 
-
-        /*
-         * Main platform.
-         */
-
         ctx.fillStyle =
             color(
                 this.color
@@ -1402,11 +1365,6 @@ class Platform {
             this.height,
             7
         );
-
-
-        /*
-         * Highlight.
-         */
 
         ctx.shadowBlur = 0;
 
@@ -1428,11 +1386,6 @@ class Platform {
         );
 
         ctx.stroke();
-
-
-        /*
-         * Moving indicator.
-         */
 
         if (
             this.moving
@@ -1495,10 +1448,6 @@ class Orb {
         this.phase +=
             dt * 3;
 
-        /*
-         * Orbs travel with the world.
-         */
-
         this.y +=
             game.platformSpeed() *
             dt;
@@ -1516,6 +1465,10 @@ class Orb {
 
         this.life = 0;
 
+
+        /* -------------------------------------------------
+           GOLD
+        ------------------------------------------------- */
 
         if (
             this.type ===
@@ -1545,7 +1498,15 @@ class Orb {
 
             hapticOrb();
 
-        } else if (
+            return;
+        }
+
+
+        /* -------------------------------------------------
+           INVULNERABLE
+        ------------------------------------------------- */
+
+        if (
             this.type ===
             "invulnerable"
         ) {
@@ -1554,17 +1515,17 @@ class Orb {
                 INVULNERABLE_DURATION;
 
             game.showText(
-                "INVULNERABLE!",
+                "SAFE!",
                 this.x,
                 this.y,
-                [120,255,205],
-                20
+                FIRE_GREEN,
+                23
             );
 
             game.addParticles(
                 this.x,
                 this.y,
-                [120,255,205],
+                FIRE_GREEN,
                 32,
                 1.2
             );
@@ -1573,7 +1534,16 @@ class Orb {
 
             hapticBig();
 
-        } else if (
+            return;
+        }
+
+
+        /* -------------------------------------------------
+           GHOST
+           WHITE + GOLD HALO
+        ------------------------------------------------- */
+
+        if (
             this.type ===
             "ghost"
         ) {
@@ -1581,30 +1551,120 @@ class Orb {
             game.player.ghost =
                 GHOST_DURATION;
 
-            /*
-             * Ghost immediately cancels diving.
-             */
+            game.player.phase =
+                0;
 
             game.player.diving =
                 false;
 
+            /*
+             * The ghost orb now gives an
+             * immediate upward boost.
+             *
+             * This is deliberately strong enough
+             * to feel exciting without becoming
+             * a full automatic jump.
+             */
+
+            game.player.vy =
+                Math.min(
+                    game.player.vy,
+                    -GHOST_BOOST
+                );
+
             game.showText(
-                "GHOST!",
+                "GHOST BOOST!",
                 this.x,
                 this.y,
-                GHOST_WHITE,
-                25
+                GHOST_GOLD,
+                20
+            );
+
+            game.addParticles(
+                this.x,
+                this.y,
+                GHOST_GOLD,
+                24,
+                1.2
             );
 
             game.addParticles(
                 this.x,
                 this.y,
                 GHOST_WHITE,
-                28,
-                1.1
+                18,
+                1.0
             );
 
             soundGhost();
+
+            hapticBig();
+
+            return;
+        }
+
+
+        /* -------------------------------------------------
+           PHASE
+           WHITE + RED HALO
+        ------------------------------------------------- */
+
+        if (
+            this.type ===
+            "phase"
+        ) {
+
+            game.player.phase =
+                PHASE_DURATION;
+
+            game.player.phasePlatformsPassed =
+                0;
+
+            game.player.diving =
+                false;
+
+            /*
+             * Small upward nudge so the orb
+             * still feels like a pickup rather
+             * than just a defensive item.
+             */
+
+            if (
+                game.player.vy > 0
+            ) {
+
+                game.player.vy =
+                    Math.min(
+                        game.player.vy,
+                        -PHASE_BOOST
+                    );
+            }
+
+            game.showText(
+                "PHASE!",
+                this.x,
+                this.y,
+                PHASE_RED,
+                24
+            );
+
+            game.addParticles(
+                this.x,
+                this.y,
+                PHASE_RED,
+                22,
+                1.1
+            );
+
+            game.addParticles(
+                this.x,
+                this.y,
+                PHASE_WHITE,
+                14,
+                0.9
+            );
+
+            soundPhase();
 
             hapticBig();
         }
@@ -1631,147 +1691,328 @@ class Orb {
             bob;
 
 
-        /*
-         * GLOW
-         */
-
         ctx.save();
 
         ctx.globalCompositeOperation =
             "lighter";
 
-        ctx.shadowBlur =
-            28;
+
+        /* =================================================
+           GHOST ORB
+           WHITE CORE + GOLD HALO
+        ================================================= */
 
         if (
             this.type ===
-            "gold"
+            "ghost"
         ) {
+
+            ctx.shadowBlur =
+                30;
+
+            ctx.shadowColor =
+                "rgba(255,205,55,0.95)";
+
+
+            /*
+             * Gold outer halo.
+             */
+
+            const halo =
+                ctx.createRadialGradient(
+                    this.x,
+                    sy,
+                    5,
+                    this.x,
+                    sy,
+                    30
+                );
+
+            halo.addColorStop(
+                0,
+                "rgba(255,255,255,0.95)"
+            );
+
+            halo.addColorStop(
+                0.25,
+                "rgba(255,225,100,0.9)"
+            );
+
+            halo.addColorStop(
+                0.55,
+                "rgba(255,190,40,0.45)"
+            );
+
+            halo.addColorStop(
+                1,
+                "rgba(255,190,40,0)"
+            );
+
+            ctx.fillStyle =
+                halo;
+
+            ctx.beginPath();
+
+            ctx.arc(
+                this.x,
+                sy,
+                30,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.fill();
+
+
+            /*
+             * Gold ring.
+             */
+
+            ctx.strokeStyle =
+                "rgba(255,210,55,0.95)";
+
+            ctx.lineWidth = 3;
+
+            ctx.beginPath();
+
+            ctx.arc(
+                this.x,
+                sy,
+                15,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.stroke();
+
+
+            /*
+             * White core.
+             */
+
+            const core =
+                ctx.createRadialGradient(
+                    this.x - 3,
+                    sy - 3,
+                    1,
+                    this.x,
+                    sy,
+                    this.radius
+                );
+
+            core.addColorStop(
+                0,
+                "#ffffff"
+            );
+
+            core.addColorStop(
+                0.55,
+                "#f8fbff"
+            );
+
+            core.addColorStop(
+                1,
+                "#d8ecff"
+            );
+
+            ctx.fillStyle =
+                core;
+
+            ctx.beginPath();
+
+            ctx.arc(
+                this.x,
+                sy,
+                this.radius,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.fill();
+
+
+        /*
+         * PHASE ORB
+         * WHITE CORE + RED HALO
+         */
+
+        } else if (
+            this.type ===
+            "phase"
+        ) {
+
+            ctx.shadowBlur =
+                30;
+
+            ctx.shadowColor =
+                "rgba(255,55,80,0.95)";
+
+
+            const halo =
+                ctx.createRadialGradient(
+                    this.x,
+                    sy,
+                    4,
+                    this.x,
+                    sy,
+                    29
+                );
+
+            halo.addColorStop(
+                0,
+                "rgba(255,255,255,1)"
+            );
+
+            halo.addColorStop(
+                0.25,
+                "rgba(255,130,140,0.85)"
+            );
+
+            halo.addColorStop(
+                0.55,
+                "rgba(255,50,75,0.45)"
+            );
+
+            halo.addColorStop(
+                1,
+                "rgba(255,40,70,0)"
+            );
+
+            ctx.fillStyle =
+                halo;
+
+            ctx.beginPath();
+
+            ctx.arc(
+                this.x,
+                sy,
+                29,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.fill();
+
+
+            /*
+             * Red ring.
+             */
+
+            ctx.strokeStyle =
+                "rgba(255,70,90,0.95)";
+
+            ctx.lineWidth = 3;
+
+            ctx.beginPath();
+
+            ctx.arc(
+                this.x,
+                sy,
+                15,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.stroke();
+
+
+            /*
+             * White core.
+             */
+
+            ctx.fillStyle =
+                "#ffffff";
+
+            ctx.beginPath();
+
+            ctx.arc(
+                this.x,
+                sy,
+                this.radius,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.fill();
+
+
+        /*
+         * SAFETY ORB
+         */
+
+        } else if (
+            this.type ===
+            "invulnerable"
+        ) {
+
+            ctx.shadowBlur =
+                28;
+
+            ctx.shadowColor =
+                "rgba(70,255,185,0.95)";
+
+            const core =
+                ctx.createRadialGradient(
+                    this.x - 3,
+                    sy - 3,
+                    1,
+                    this.x,
+                    sy,
+                    this.radius
+                );
+
+            core.addColorStop(
+                0,
+                "#ffffff"
+            );
+
+            core.addColorStop(
+                0.3,
+                "#8affd0"
+            );
+
+            core.addColorStop(
+                1,
+                "#38e89b"
+            );
+
+            ctx.fillStyle =
+                core;
+
+            ctx.beginPath();
+
+            ctx.arc(
+                this.x,
+                sy,
+                this.radius,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.fill();
+
+
+        /*
+         * GOLD ORB
+         */
+
+        } else {
+
+            ctx.shadowBlur =
+                28;
 
             ctx.shadowColor =
                 "rgba(255,205,50,0.95)";
 
-        } else if (
-            this.type ===
-            "ghost"
-        ) {
-
-            ctx.shadowColor =
-                "rgba(240,250,255,1)";
-
-        } else {
-
-            ctx.shadowColor =
-                "rgba(100,255,200,1)";
-        }
-
-
-        /*
-         * Outer aura.
-         */
-
-        const aura =
-            ctx.createRadialGradient(
-                this.x,
-                sy,
-                1,
-                this.x,
-                sy,
-                25
-            );
-
-        if (
-            this.type ===
-            "gold"
-        ) {
-
-            aura.addColorStop(
-                0,
-                "rgba(255,245,160,0.95)"
-            );
-
-            aura.addColorStop(
-                0.35,
-                "rgba(255,210,40,0.5)"
-            );
-
-        } else if (
-            this.type ===
-            "ghost"
-        ) {
-
-            aura.addColorStop(
-                0,
-                "rgba(255,255,255,1)"
-            );
-
-            aura.addColorStop(
-                0.35,
-                "rgba(180,220,255,0.6)"
-            );
-
-        } else {
-
-            aura.addColorStop(
-                0,
-                "rgba(255,255,255,1)"
-            );
-
-            aura.addColorStop(
-                0.25,
-                "rgba(80,255,190,0.75)"
-            );
-
-            aura.addColorStop(
-                0.55,
-                "rgba(130,100,255,0.55)"
-            );
-
-            aura.addColorStop(
-                0.8,
-                "rgba(255,80,180,0.3)"
-            );
-        }
-
-        aura.addColorStop(
-            1,
-            "rgba(0,0,0,0)"
-        );
-
-        ctx.fillStyle =
-            aura;
-
-        ctx.beginPath();
-
-        ctx.arc(
-            this.x,
-            sy,
-            25,
-            0,
-            Math.PI * 2
-        );
-
-        ctx.fill();
-
-
-        /*
-         * Core.
-         */
-
-        const core =
-            ctx.createRadialGradient(
-                this.x - 3,
-                sy - 3,
-                1,
-                this.x,
-                sy,
-                this.radius
-            );
-
-        if (
-            this.type ===
-            "gold"
-        ) {
+            const core =
+                ctx.createRadialGradient(
+                    this.x - 3,
+                    sy - 3,
+                    1,
+                    this.x,
+                    sy,
+                    this.radius
+                );
 
             core.addColorStop(
                 0,
@@ -1788,81 +2029,29 @@ class Orb {
                 "#ffad18"
             );
 
-        } else if (
-            this.type ===
-            "ghost"
-        ) {
+            ctx.fillStyle =
+                core;
 
-            core.addColorStop(
+            ctx.beginPath();
+
+            ctx.arc(
+                this.x,
+                sy,
+                this.radius,
                 0,
-                "#ffffff"
+                Math.PI * 2
             );
 
-            core.addColorStop(
-                0.4,
-                "#dff6ff"
-            );
-
-            core.addColorStop(
-                1,
-                "#a4d6ff"
-            );
-
-        } else {
-
-            /*
-             * Rainbow orb.
-             */
-
-            const hue =
-                (
-                    performance.now() *
-                    0.08
-                ) % 360;
-
-            core.addColorStop(
-                0,
-                "#ffffff"
-            );
-
-            core.addColorStop(
-                0.35,
-                `hsl(${hue},100%,70%)`
-            );
-
-            core.addColorStop(
-                0.65,
-                `hsl(${hue + 100},100%,65%)`
-            );
-
-            core.addColorStop(
-                1,
-                `hsl(${hue + 210},100%,60%)`
-            );
+            ctx.fill();
         }
-
-        ctx.fillStyle =
-            core;
-
-        ctx.beginPath();
-
-        ctx.arc(
-            this.x,
-            sy,
-            this.radius,
-            0,
-            Math.PI * 2
-        );
-
-        ctx.fill();
 
 
         /*
-         * Small shine.
+         * Shine.
          */
 
         ctx.fillStyle =
-            "rgba(255,255,255,0.95)";
+            "rgba(255,255,255,0.98)";
 
         ctx.beginPath();
 
@@ -1928,7 +2117,18 @@ class Player {
 
         this.ghost = 0;
 
+        this.phase = 0;
+
+        this.phasePlatformsPassed = 0;
+
         this.lastPlatform = null;
+
+        /*
+         * Prevents repeated bottom collision
+         * during the same frame.
+         */
+
+        this.fireCooldown = 0;
     }
 
 
@@ -1951,13 +2151,6 @@ class Player {
             direction++;
         }
 
-
-        /*
-         * Touch steering.
-         *
-         * Horizontal position relative to the
-         * original touch point controls direction.
-         */
 
         if (
             pointerActive
@@ -1998,12 +2191,6 @@ class Player {
             );
 
 
-        /*
-         * DIVE ACTION
-         *
-         * It only triggers once.
-         */
-
         if (
             diveRequested
         ) {
@@ -2013,14 +2200,11 @@ class Player {
 
             if (
                 this.vy > 80 &&
-                this.ghost <= 0
+                this.ghost <= 0 &&
+                this.phase <= 0
             ) {
 
                 this.diving = true;
-
-                /*
-                 * Immediate feeling of action.
-                 */
 
                 this.vy += 180;
 
@@ -2034,11 +2218,6 @@ class Player {
             }
         }
 
-
-        /*
-         * Diving naturally ends once we
-         * hit something.
-         */
 
         if (
             this.diving &&
@@ -2173,6 +2352,7 @@ class Player {
                 );
         }
 
+
         if (
             this.ghost > 0
         ) {
@@ -2195,6 +2375,46 @@ class Player {
                     16
                 );
             }
+        }
+
+
+        if (
+            this.phase > 0
+        ) {
+
+            this.phase =
+                Math.max(
+                    0,
+                    this.phase - dt
+                );
+
+            if (
+                this.phase <= 0
+            ) {
+
+                this.phasePlatformsPassed =
+                    0;
+
+                game.showText(
+                    "PHASE END",
+                    this.x,
+                    this.y,
+                    [220,220,230],
+                    15
+                );
+            }
+        }
+
+
+        if (
+            this.fireCooldown > 0
+        ) {
+
+            this.fireCooldown =
+                Math.max(
+                    0,
+                    this.fireCooldown - dt
+                );
         }
     }
 
@@ -2237,6 +2457,9 @@ class Player {
         const ghosting =
             this.ghost > 0;
 
+        const phasing =
+            this.phase > 0;
+
         const protectedState =
             this.invulnerable > 0;
 
@@ -2270,6 +2493,13 @@ class Player {
             ) {
 
                 alpha *= 1.5;
+            }
+
+            if (
+                phasing
+            ) {
+
+                alpha *= 1.3;
             }
 
             ctx.fillStyle =
@@ -2355,7 +2585,8 @@ class Player {
 
 
         /*
-         * Ghost aura.
+         * Ghost aura:
+         * WHITE BALL + GOLD HALO.
          */
 
         if (
@@ -2364,21 +2595,72 @@ class Player {
 
             ctx.save();
 
+            ctx.globalCompositeOperation =
+                "lighter";
+
             ctx.globalAlpha =
-                0.38 +
+                0.7 +
                 Math.sin(
                     performance.now() *
                     0.012
-                ) * 0.12;
+                ) * 0.15;
 
             ctx.shadowBlur =
-                25;
+                30;
 
             ctx.shadowColor =
-                "rgba(230,250,255,0.9)";
+                "rgba(255,205,55,0.95)";
 
             ctx.strokeStyle =
-                "rgba(240,250,255,0.85)";
+                "rgba(255,210,70,0.95)";
+
+            ctx.lineWidth = 4;
+
+            ctx.beginPath();
+
+            ctx.arc(
+                this.x,
+                sy,
+                25,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+
+        /*
+         * Phase aura:
+         * WHITE BALL + RED HALO.
+         */
+
+        if (
+            phasing
+        ) {
+
+            ctx.save();
+
+            ctx.globalCompositeOperation =
+                "lighter";
+
+            ctx.globalAlpha =
+                0.65 +
+                Math.sin(
+                    performance.now() *
+                    0.018
+                ) * 0.15;
+
+            ctx.shadowBlur =
+                28;
+
+            ctx.shadowColor =
+                "rgba(255,55,80,0.95)";
+
+            ctx.strokeStyle =
+                "rgba(255,65,85,0.95)";
 
             ctx.lineWidth = 3;
 
@@ -2387,7 +2669,7 @@ class Player {
             ctx.arc(
                 this.x,
                 sy,
-                23,
+                24,
                 0,
                 Math.PI * 2
             );
@@ -2407,16 +2689,38 @@ class Player {
         ctx.shadowBlur =
             18;
 
-        ctx.shadowColor =
+        if (
             protectedState
-                ? "rgba(90,255,190,0.8)"
-                : ghosting
-                    ? "rgba(235,250,255,0.8)"
-                    : "rgba(80,220,255,0.65)";
+        ) {
+
+            ctx.shadowColor =
+                "rgba(90,255,190,0.8)";
+
+        } else if (
+            ghosting
+        ) {
+
+            ctx.shadowColor =
+                "rgba(255,205,55,0.95)";
+
+        } else if (
+            phasing
+        ) {
+
+            ctx.shadowColor =
+                "rgba(255,55,80,0.95)";
+
+        } else {
+
+            ctx.shadowColor =
+                "rgba(80,220,255,0.65)";
+        }
+
 
         ctx.fillStyle =
-            ghosting
-                ? "rgba(245,250,255,0.62)"
+            ghosting ||
+            phasing
+                ? "#ffffff"
                 : "#f5faff";
 
         ctx.beginPath();
@@ -2436,12 +2740,33 @@ class Player {
         ctx.shadowBlur = 0;
 
 
-        ctx.fillStyle =
+        if (
             ghosting
-                ? "#d5efff"
-                : protectedState
-                    ? "#6affbf"
-                    : "#50c8ff";
+        ) {
+
+            ctx.fillStyle =
+                "#ffe17a";
+
+        } else if (
+            phasing
+        ) {
+
+            ctx.fillStyle =
+                "#ff9ca7";
+
+        } else if (
+            protectedState
+        ) {
+
+            ctx.fillStyle =
+                "#6affbf";
+
+        } else {
+
+            ctx.fillStyle =
+                "#50c8ff";
+        }
+
 
         ctx.beginPath();
 
@@ -2643,10 +2968,6 @@ class Game {
 
         this.platforms = [];
 
-        /*
-         * Starting platform.
-         */
-
         this.platforms.push(
             new Platform(
                 WIDTH / 2,
@@ -2656,11 +2977,6 @@ class Game {
                 this.platformId++
             )
         );
-
-
-        /*
-         * Deliberately separated.
-         */
 
         this.platforms.push(
             new Platform(
@@ -2672,7 +2988,6 @@ class Game {
             )
         );
 
-
         this.platforms.push(
             new Platform(
                 370,
@@ -2683,7 +2998,6 @@ class Game {
             )
         );
 
-
         this.platforms.push(
             new Platform(
                 110,
@@ -2693,7 +3007,6 @@ class Game {
                 this.platformId++
             )
         );
-
 
         this.nextPlatformY =
             -245;
@@ -2712,10 +3025,6 @@ class Game {
         const d =
             this.difficulty();
 
-
-        /*
-         * Find the latest platform above.
-         */
 
         const previous =
             this.platforms
@@ -2792,14 +3101,6 @@ class Game {
         }
 
 
-        /*
-         * Horizontal reach protection.
-         *
-         * The visual side-to-side pattern stays,
-         * but the game won't create an impossible
-         * transition.
-         */
-
         if (
             previous
         ) {
@@ -2840,13 +3141,6 @@ class Game {
             );
 
 
-        /*
-         * Platform width.
-         *
-         * Difficulty gradually reduces width,
-         * but never makes early platforms tiny.
-         */
-
         let widthCells;
 
         if (
@@ -2875,10 +3169,6 @@ class Game {
                 ];
         }
 
-
-        /*
-         * Moving platforms ONLY after 7000.
-         */
 
         const moving =
             this.height >=
@@ -2924,12 +3214,6 @@ class Game {
         }
 
 
-        /*
-         * Vertical spacing.
-         *
-         * Remains generous throughout.
-         */
-
         const gap =
             lerp(
                 MIN_VERTICAL_GAP,
@@ -2943,17 +3227,9 @@ class Game {
             );
 
 
-        const oldNext =
-            this.nextPlatformY;
-
         this.nextPlatformY -=
             gap;
 
-
-        /*
-         * Orb in the EMPTY SPACE between
-         * the previous platform and this one.
-         */
 
         if (
             previous
@@ -2976,40 +3252,49 @@ class Game {
         upperPlatform
     ) {
 
-        /*
-         * Gold is by far the common orb.
-         */
-
         const roll =
             Math.random();
 
 
         let type;
 
+        /*
+         * Gold:
+         * 65%
+         *
+         * Safety:
+         * 13%
+         *
+         * Ghost:
+         * 12%
+         *
+         * Phase:
+         * 10%
+         */
+
         if (
-            roll < 0.72
+            roll < 0.65
         ) {
 
             type = "gold";
 
         } else if (
-            roll < 0.88
+            roll < 0.78
         ) {
 
             type = "invulnerable";
 
-        } else {
+        } else if (
+            roll < 0.90
+        ) {
 
             type = "ghost";
+
+        } else {
+
+            type = "phase";
         }
 
-
-        /*
-         * Put it in the open space.
-         *
-         * Never directly on top of either
-         * platform.
-         */
 
         const lowerTop =
             lowerPlatform.y -
@@ -3035,22 +3320,13 @@ class Game {
         }
 
 
-        let x;
-
-
-        /*
-         * Put the orb somewhere useful:
-         * between the horizontal positions,
-         * with some freedom.
-         */
-
         const midpoint =
             (
                 lowerPlatform.x +
                 upperPlatform.x
             ) / 2;
 
-        x =
+        let x =
             midpoint +
             (
                 Math.random() * 120 -
@@ -3241,11 +3517,9 @@ class Game {
     ) {
 
         /*
-         * GHOST means:
+         * FULL GHOST:
          *
-         * - pass through everything
-         * - no bounce
-         * - no platform collision
+         * Completely ignores platforms.
          */
 
         if (
@@ -3255,6 +3529,14 @@ class Game {
             return false;
         }
 
+
+        /*
+         * ONE-PLATFORM PHASE:
+         *
+         * Ignore exactly ONE platform,
+         * but only while actually falling
+         * through its top surface.
+         */
 
         const left =
             platform.left;
@@ -3268,10 +3550,6 @@ class Game {
         const bottom =
             platform.bottom;
 
-
-        /*
-         * Closest point.
-         */
 
         const closestX =
             clamp(
@@ -3307,14 +3585,6 @@ class Game {
         }
 
 
-        /*
-         * Determine collision face using
-         * previous position AND velocity.
-         *
-         * This prevents the old bug where
-         * platforms could trap the player.
-         */
-
         const wasAbove =
             player.previousY +
             player.radius <=
@@ -3340,20 +3610,12 @@ class Game {
         let ny = 0;
 
 
-        /*
-         * TOP
-         */
-
         if (
             player.vy > 0 &&
             wasAbove
         ) {
 
             ny = -1;
-
-        /*
-         * BOTTOM
-         */
 
         } else if (
             player.vy < 0 &&
@@ -3362,19 +3624,11 @@ class Game {
 
             ny = 1;
 
-        /*
-         * LEFT
-         */
-
         } else if (
             wasLeft
         ) {
 
             nx = -1;
-
-        /*
-         * RIGHT
-         */
 
         } else if (
             wasRight
@@ -3383,10 +3637,6 @@ class Game {
             nx = 1;
 
         } else {
-
-            /*
-             * Fallback based on penetration.
-             */
 
             const distances = [
 
@@ -3446,8 +3696,68 @@ class Game {
 
 
         /*
-         * Relative velocity.
+         * PHASE:
+         *
+         * Only consume the ability when
+         * the player is genuinely falling
+         * through the TOP of a platform.
+         *
+         * This prevents a side collision from
+         * accidentally consuming the phase.
          */
+
+        if (
+            player.phase > 0 &&
+            ny === -1 &&
+            player.vy > 0 &&
+            wasAbove
+        ) {
+
+            player.phasePlatformsPassed++;
+
+            player.phase = 0;
+
+            /*
+             * Push the player slightly below
+             * the platform so the same platform
+             * cannot collide again during the
+             * remaining substeps.
+             */
+
+            player.y =
+                bottom +
+                player.radius +
+                2;
+
+            /*
+             * Keep the player falling.
+             */
+
+            player.vy =
+                Math.max(
+                    player.vy,
+                    220
+                );
+
+            game.showText(
+                "PHASED!",
+                player.x,
+                player.y,
+                PHASE_RED,
+                17
+            );
+
+            game.addParticles(
+                player.x,
+                top,
+                PHASE_RED,
+                18,
+                0.9
+            );
+
+            return false;
+        }
+
 
         const relativeVx =
             player.vx -
@@ -3471,7 +3781,7 @@ class Game {
 
 
         /*
-         * Gently separate the player.
+         * Separate the player.
          */
 
         if (
@@ -3550,11 +3860,6 @@ class Game {
                 false;
 
 
-            /*
-             * First landing on this platform
-             * awards score.
-             */
-
             if (
                 !platform.scored
             ) {
@@ -3575,28 +3880,14 @@ class Game {
 
         /*
          * BOTTOM HIT
-         *
-         * Ricochet upward.
-         *
-         * It is not a perfect mirror reflection;
-         * it takes some horizontal trajectory into
-         * account so it feels more natural.
          */
 
         if (
             ny === 1
         ) {
 
-            /*
-             * Preserve horizontal trajectory.
-             */
-
             player.vx *=
                 0.92;
-
-            /*
-             * Small upward ricochet.
-             */
 
             player.vy =
                 -Math.max(
@@ -3639,8 +3930,6 @@ class Game {
 
         /*
          * SIDE HIT
-         *
-         * Reflect the horizontal trajectory.
          */
 
         if (
@@ -3650,10 +3939,6 @@ class Game {
             player.vx =
                 -player.vx *
                 PLATFORM_RESTITUTION;
-
-            /*
-             * Don't kill vertical movement.
-             */
 
             player.vy *=
                 0.96;
@@ -3720,12 +4005,6 @@ class Game {
         }
 
 
-        /*
-         * Flow.
-         *
-         * This is the central combo system.
-         */
-
         const clean =
             Math.abs(
                 this.player.vx
@@ -3760,10 +4039,6 @@ class Game {
             );
 
 
-        /*
-         * Base score.
-         */
-
         let points = 100;
 
 
@@ -3783,15 +4058,6 @@ class Game {
             points += 100;
         }
 
-
-        /*
-         * Flow multiplier.
-         *
-         * x1 = normal
-         * x2 = +15%
-         * x3 = +30%
-         * etc.
-         */
 
         const multiplier =
             1 +
@@ -3814,10 +4080,6 @@ class Game {
             finalPoints;
 
 
-        /*
-         * Make the combo visible.
-         */
-
         if (
             this.flow >= 2
         ) {
@@ -3831,10 +4093,6 @@ class Game {
             );
         }
 
-
-        /*
-         * Bigger landing feedback.
-         */
 
         this.bounceEffect(
             this.player.x,
@@ -3887,25 +4145,31 @@ class Game {
 
 
     /* =====================================================
-       FIRE COLLISION
+       BOTTOM HAZARD
     ===================================================== */
 
     fireCollision() {
+
+        /*
+         * IMPORTANT:
+         *
+         * Fire is screen-space, so we calculate
+         * the player's screen Y first.
+         */
 
         const screenY =
             this.player.y +
             this.cameraY;
 
 
-        /*
-         * The fire occupies the bottom
-         * of the screen.
-         */
-
         const fireTop =
             HEIGHT -
             FIRE_HEIGHT;
 
+
+        /*
+         * Not touching the hazard.
+         */
 
         if (
             screenY +
@@ -3913,15 +4177,27 @@ class Game {
             fireTop
         ) {
 
-            return;
+            return false;
+        }
+
+
+        /*
+         * Cooldown prevents multiple fire
+         * collisions during the same bounce.
+         */
+
+        if (
+            this.player.fireCooldown > 0
+        ) {
+
+            return false;
         }
 
 
         /*
          * INVULNERABLE:
          *
-         * The fire behaves like a special
-         * bounce surface.
+         * Bounce immediately upward.
          */
 
         if (
@@ -3929,30 +4205,31 @@ class Game {
             0
         ) {
 
+            /*
+             * This is the critical fix:
+             *
+             * Instead of leaving the ball sitting
+             * at the bottom boundary, place it
+             * CLEARLY above the hazard and give it
+             * a strong upward velocity.
+             */
+
             this.player.y =
                 fireTop -
                 this.cameraY -
-                this.player.radius;
-
-
-            /*
-             * Preserve horizontal trajectory,
-             * reverse vertical movement.
-             */
-
-            const incoming =
-                Math.abs(
-                    this.player.vy
-                );
+                this.player.radius -
+                3;
 
 
             this.player.vy =
                 -Math.max(
-                    650,
+                    720,
                     Math.min(
-                        1050,
-                        incoming *
-                        0.78
+                        1100,
+                        Math.abs(
+                            this.player.vy
+                        ) *
+                        0.82
                     )
                 );
 
@@ -3960,11 +4237,20 @@ class Game {
             this.player.diving =
                 false;
 
+
             this.player.squash =
                 1.45;
 
             this.player.stretch =
                 0.62;
+
+
+            /*
+             * Prevent immediate re-trigger.
+             */
+
+            this.player.fireCooldown =
+                0.28;
 
 
             this.addParticles(
@@ -3993,7 +4279,7 @@ class Game {
                 fireTop -
                     this.cameraY -
                     25,
-                [110,255,205],
+                FIRE_GREEN,
                 24
             );
 
@@ -4007,6 +4293,7 @@ class Game {
 
             hapticBig();
 
+
             /*
              * Safety net is consumed.
              */
@@ -4019,22 +4306,44 @@ class Game {
 
 
         /*
-         * Ghost cannot bounce off fire.
+         * Ghost:
          *
-         * If ghosting, the player continues
-         * through the danger zone.
+         * Ghost passes through the fire too.
+         *
+         * However, we move it beyond the danger
+         * boundary so it cannot visually hover
+         * inside the fire.
          */
 
         if (
             this.player.ghost > 0
         ) {
 
+            if (
+                screenY >
+                HEIGHT + 15
+            ) {
+
+                this.player.y =
+                    HEIGHT -
+                    this.cameraY -
+                    this.player.radius -
+                    2;
+            }
+
             return false;
         }
 
 
         /*
-         * Otherwise death.
+         * PHASE:
+         *
+         * Phase is for platforms, not for
+         * surviving the fire.
+         */
+
+        /*
+         * NORMAL DEATH.
          */
 
         this.die();
@@ -4086,7 +4395,7 @@ class Game {
 
 
     /* =====================================================
-       PARTICLES / TEXT
+       EFFECTS
     ===================================================== */
 
     updateEffects(dt) {
@@ -4141,40 +4450,41 @@ class Game {
 
 
     /* =====================================================
-       FIRE DRAWING
+       NEW CLEAN FIRE
     ===================================================== */
 
     drawFire() {
 
-        const baseY =
-            HEIGHT;
+        const top =
+            HEIGHT -
+            FIRE_HEIGHT;
 
 
         /*
-         * Dark danger zone behind the flames.
+         * Soft danger glow.
          */
 
         const danger =
             ctx.createLinearGradient(
                 0,
-                HEIGHT - 90,
+                top - 35,
                 0,
                 HEIGHT
             );
 
         danger.addColorStop(
             0,
-            "rgba(10,120,120,0)"
+            "rgba(20,170,255,0)"
         );
 
         danger.addColorStop(
             0.55,
-            "rgba(10,90,100,0.18)"
+            "rgba(20,180,230,0.06)"
         );
 
         danger.addColorStop(
             1,
-            "rgba(5,30,45,0.55)"
+            "rgba(10,80,120,0.24)"
         );
 
         ctx.fillStyle =
@@ -4182,183 +4492,18 @@ class Game {
 
         ctx.fillRect(
             0,
-            HEIGHT - 90,
+            top - 35,
             WIDTH,
-            90
+            FIRE_HEIGHT + 35
         );
 
 
         /*
-         * Flame tongues.
+         * CLEAN NEON HAZARD LINE
          *
-         * Each tongue is independently animated,
-         * with multiple layers so it looks more
-         * like actual fire rather than triangles.
-         */
-
-        const count = 34;
-
-        for (
-            let i = 0;
-            i < count;
-            i++
-        ) {
-
-            const x =
-                (
-                    i /
-                    (
-                        count - 1
-                    )
-                ) *
-                WIDTH;
-
-            const seed =
-                i * 1.731;
-
-            const wave =
-                Math.sin(
-                    this.firePhase * 2.3 +
-                    seed
-                );
-
-            const wave2 =
-                Math.sin(
-                    this.firePhase * 4.7 +
-                    seed * 1.7
-                );
-
-            const height =
-                28 +
-                (
-                    18 +
-                    wave * 12 +
-                    wave2 * 7
-                );
-
-            const width =
-                15 +
-                (
-                    i % 3
-                ) * 3;
-
-
-            /*
-             * Outer blue flame.
-             */
-
-            ctx.fillStyle =
-                "rgba(35,170,255,0.85)";
-
-            ctx.beginPath();
-
-            ctx.moveTo(
-                x - width,
-                baseY
-            );
-
-            ctx.quadraticCurveTo(
-                x - width * 0.75,
-                baseY - height * 0.45,
-                x - width * 0.25,
-                baseY - height * 0.72
-            );
-
-            ctx.quadraticCurveTo(
-                x + wave * 7,
-                baseY - height * 0.98,
-                x + wave2 * 5,
-                baseY - height
-            );
-
-            ctx.quadraticCurveTo(
-                x + width * 0.3,
-                baseY - height * 0.62,
-                x + width,
-                baseY
-            );
-
-            ctx.closePath();
-
-            ctx.fill();
-
-
-            /*
-             * Middle green flame.
-             */
-
-            ctx.fillStyle =
-                "rgba(55,255,155,0.82)";
-
-            ctx.beginPath();
-
-            ctx.moveTo(
-                x - width * 0.72,
-                baseY
-            );
-
-            ctx.quadraticCurveTo(
-                x - width * 0.45,
-                baseY - height * 0.5,
-                x - width * 0.10,
-                baseY - height * 0.60
-            );
-
-            ctx.quadraticCurveTo(
-                x + wave2 * 5,
-                baseY - height * 0.85,
-                x + wave * 4,
-                baseY - height * 0.72
-            );
-
-            ctx.quadraticCurveTo(
-                x + width * 0.48,
-                baseY - height * 0.35,
-                x + width * 0.72,
-                baseY
-            );
-
-            ctx.closePath();
-
-            ctx.fill();
-
-
-            /*
-             * Hot inner flame.
-             */
-
-            ctx.fillStyle =
-                "rgba(150,255,190,0.65)";
-
-            ctx.beginPath();
-
-            ctx.moveTo(
-                x - width * 0.40,
-                baseY
-            );
-
-            ctx.quadraticCurveTo(
-                x - width * 0.18,
-                baseY - height * 0.35,
-                x,
-                baseY - height * 0.48
-            );
-
-            ctx.quadraticCurveTo(
-                x + wave * 3,
-                baseY - height * 0.66,
-                x + width * 0.35,
-                baseY
-            );
-
-            ctx.closePath();
-
-            ctx.fill();
-        }
-
-
-        /*
-         * Glowing flame line.
+         * Instead of dozens of giant flame
+         * triangles, this uses a moving energy
+         * field with small flame pulses.
          */
 
         ctx.save();
@@ -4370,12 +4515,130 @@ class Game {
             18;
 
         ctx.shadowColor =
-            "rgba(50,230,255,0.7)";
+            "rgba(40,210,255,0.75)";
+
+
+        /*
+         * Main cyan/green energy line.
+         */
 
         ctx.strokeStyle =
-            "rgba(75,240,190,0.65)";
+            "rgba(65,245,200,0.95)";
 
         ctx.lineWidth = 3;
+
+        ctx.beginPath();
+
+        for (
+            let x = 0;
+            x <= WIDTH;
+            x += 6
+        ) {
+
+            const wave =
+                Math.sin(
+                    x * 0.055 +
+                    this.firePhase * 5
+                );
+
+            const wave2 =
+                Math.sin(
+                    x * 0.13 -
+                    this.firePhase * 7
+                );
+
+            const y =
+                top +
+                8 +
+                wave * 4 +
+                wave2 * 2;
+
+            if (
+                x === 0
+            ) {
+
+                ctx.moveTo(
+                    x,
+                    y
+                );
+
+            } else {
+
+                ctx.lineTo(
+                    x,
+                    y
+                );
+            }
+        }
+
+        ctx.stroke();
+
+
+        /*
+         * Small energy spikes.
+         */
+
+        for (
+            let i = 0;
+            i < 26;
+            i++
+        ) {
+
+            const x =
+                (
+                    i / 25
+                ) *
+                WIDTH;
+
+            const pulse =
+                (
+                    Math.sin(
+                        this.firePhase * 5 +
+                        i * 1.9
+                    ) +
+                    1
+                ) / 2;
+
+            const spikeHeight =
+                7 +
+                pulse * 13;
+
+            ctx.strokeStyle =
+                i % 2 === 0
+                    ? "rgba(55,255,155,0.65)"
+                    : "rgba(40,190,255,0.62)";
+
+            ctx.lineWidth = 2;
+
+            ctx.beginPath();
+
+            ctx.moveTo(
+                x,
+                top + 13
+            );
+
+            ctx.lineTo(
+                x +
+                    Math.sin(
+                        i * 3
+                    ) * 3,
+                top +
+                    13 -
+                    spikeHeight
+            );
+
+            ctx.stroke();
+        }
+
+
+        /*
+         * Thin blue lower glow.
+         */
+
+        ctx.strokeStyle =
+            "rgba(40,170,255,0.42)";
+
+        ctx.lineWidth = 2;
 
         ctx.beginPath();
 
@@ -4387,12 +4650,12 @@ class Game {
 
             const y =
                 HEIGHT -
-                23 -
+                5 +
                 Math.sin(
-                    x * 0.075 +
+                    x * 0.08 +
                     this.firePhase * 4
                 ) *
-                7;
+                3;
 
             if (
                 x === 0
@@ -4418,7 +4681,7 @@ class Game {
 
 
         /*
-         * DANGER label.
+         * Minimal danger label.
          */
 
         ctx.save();
@@ -4427,15 +4690,15 @@ class Game {
             "center";
 
         ctx.font =
-            "bold 12px Arial";
+            "bold 10px Arial";
 
         ctx.fillStyle =
-            "rgba(150,255,210,0.62)";
+            "rgba(160,245,225,0.48)";
 
         ctx.fillText(
             "DANGER",
             WIDTH / 2,
-            HEIGHT - 8
+            HEIGHT - 7
         );
 
         ctx.restore();
@@ -4481,10 +4744,6 @@ class Game {
             HEIGHT
         );
 
-
-        /*
-         * Stars.
-         */
 
         for (
             let i = 0;
@@ -4541,10 +4800,6 @@ class Game {
             "center";
 
 
-        /*
-         * Score.
-         */
-
         ctx.font =
             "bold 38px Arial";
 
@@ -4571,10 +4826,6 @@ class Game {
         );
 
 
-        /*
-         * Height.
-         */
-
         ctx.font =
             "bold 20px Arial";
 
@@ -4587,10 +4838,6 @@ class Game {
             96
         );
 
-
-        /*
-         * FLOW
-         */
 
         if (
             this.flow >= 2
@@ -4636,7 +4883,7 @@ class Game {
 
 
         /*
-         * Active power.
+         * Active safety.
          */
 
         if (
@@ -4659,6 +4906,11 @@ class Game {
                 34
             );
 
+
+        /*
+         * Active ghost.
+         */
+
         } else if (
             this.player.ghost >
             0
@@ -4668,13 +4920,38 @@ class Game {
                 "bold 17px Arial";
 
             ctx.fillStyle =
-                "#e9f9ff";
+                "#ffe06a";
 
             ctx.textAlign =
                 "right";
 
             ctx.fillText(
                 `GHOST ${this.player.ghost.toFixed(1)}s`,
+                WIDTH - 14,
+                34
+            );
+
+
+        /*
+         * Active phase.
+         */
+
+        } else if (
+            this.player.phase >
+            0
+        ) {
+
+            ctx.font =
+                "bold 17px Arial";
+
+            ctx.fillStyle =
+                "#ff7888";
+
+            ctx.textAlign =
+                "right";
+
+            ctx.fillText(
+                `PHASE ${this.player.phase.toFixed(1)}s`,
                 WIDTH - 14,
                 34
             );
@@ -4765,7 +5042,7 @@ class Game {
          */
 
         ctx.font =
-            "bold 15px Arial";
+            "bold 14px Arial";
 
         ctx.fillStyle =
             GOLD;
@@ -4773,7 +5050,7 @@ class Game {
         ctx.fillText(
             "● GOLD  +50",
             WIDTH / 2,
-            490
+            485
         );
 
 
@@ -4781,19 +5058,29 @@ class Game {
             "#78ffc5";
 
         ctx.fillText(
-            "● RAINBOW  SAFETY NET",
+            "● GREEN  SAFETY BOUNCE",
             WIDTH / 2,
-            518
+            512
         );
 
 
         ctx.fillStyle =
-            "#eafaff";
+            "#ffe06a";
 
         ctx.fillText(
-            "● WHITE  GHOST",
+            "● WHITE + GOLD  GHOST BOOST",
             WIDTH / 2,
-            546
+            539
+        );
+
+
+        ctx.fillStyle =
+            "#ff7888";
+
+        ctx.fillText(
+            "● WHITE + RED  PHASE ONE PLATFORM",
+            WIDTH / 2,
+            566
         );
 
 
@@ -4806,7 +5093,7 @@ class Game {
         ctx.fillText(
             "TAP TO START",
             WIDTH / 2,
-            620
+            640
         );
     }
 
@@ -5000,27 +5287,15 @@ class Game {
         }
 
 
-        /*
-         * Player timers.
-         */
-
         this.player.updateTimers(
             dt
         );
 
 
-        /*
-         * Player control.
-         */
-
         this.player.control(
             dt
         );
 
-
-        /*
-         * Platforms move downward.
-         */
 
         const speed =
             this.platformSpeed();
@@ -5038,10 +5313,6 @@ class Game {
         }
 
 
-        /*
-         * Orbs move downward.
-         */
-
         for (
             const orb of
             this.orbs
@@ -5050,10 +5321,6 @@ class Game {
             orb.update(dt);
         }
 
-
-        /*
-         * Physics.
-         */
 
         const subDt =
             dt /
@@ -5075,16 +5342,8 @@ class Game {
             );
 
 
-            /*
-             * Walls.
-             */
-
             this.player.wallCollision();
 
-
-            /*
-             * Platforms.
-             */
 
             for (
                 const platform of
@@ -5103,16 +5362,8 @@ class Game {
             }
 
 
-            /*
-             * Orbs.
-             */
-
             this.collideOrbs();
 
-
-            /*
-             * Fire.
-             */
 
             this.fireCollision();
 
@@ -5126,18 +5377,10 @@ class Game {
         }
 
 
-        /*
-         * Camera.
-         */
-
         this.updateCamera(
             dt
         );
 
-
-        /*
-         * Height.
-         */
 
         const currentHeight =
             Math.max(
@@ -5158,10 +5401,6 @@ class Game {
                 currentHeight;
         }
 
-
-        /*
-         * Best records.
-         */
 
         if (
             this.height >
@@ -5193,17 +5432,9 @@ class Game {
         }
 
 
-        /*
-         * Spawn platforms.
-         */
-
         this.spawnTimer +=
             dt;
 
-
-        /*
-         * Spawn rate is deliberately slow.
-         */
 
         while (
             this.spawnTimer >=
@@ -5216,10 +5447,6 @@ class Game {
             this.spawnPlatform();
         }
 
-
-        /*
-         * Despawn old platforms.
-         */
 
         const despawnY =
             -this.cameraY +
@@ -5235,10 +5462,6 @@ class Game {
             );
 
 
-        /*
-         * Remove old orbs.
-         */
-
         this.orbs =
             this.orbs.filter(
                 orb =>
@@ -5247,10 +5470,6 @@ class Game {
                         despawnY
             );
 
-
-        /*
-         * Effects.
-         */
 
         this.updateEffects(
             dt
@@ -5351,11 +5570,6 @@ class Game {
 
     draw() {
 
-        /*
-         * Everything below this point is drawn
-         * in the logical 480x800 coordinate system.
-         */
-
         ctx.save();
 
         ctx.setTransform(
@@ -5371,10 +5585,6 @@ class Game {
         this.background();
 
 
-        /*
-         * Platforms.
-         */
-
         for (
             const platform of
             this.platforms
@@ -5385,10 +5595,6 @@ class Game {
             );
         }
 
-
-        /*
-         * Orbs.
-         */
 
         for (
             const orb of
@@ -5401,10 +5607,6 @@ class Game {
         }
 
 
-        /*
-         * Particles behind player.
-         */
-
         for (
             const particle of
             this.particles
@@ -5416,18 +5618,10 @@ class Game {
         }
 
 
-        /*
-         * Player.
-         */
-
         this.player.draw(
             this.cameraY
         );
 
-
-        /*
-         * Floating text.
-         */
 
         for (
             const floatingText of
@@ -5440,17 +5634,8 @@ class Game {
         }
 
 
-        /*
-         * Fire always sits on the screen,
-         * not in world coordinates.
-         */
-
         this.drawFire();
 
-
-        /*
-         * HUD.
-         */
 
         if (
             this.started
@@ -5459,10 +5644,6 @@ class Game {
             this.hud();
         }
 
-
-        /*
-         * Screens.
-         */
 
         if (
             !this.started
@@ -5479,10 +5660,6 @@ class Game {
             this.gameOverScreen();
         }
 
-
-        /*
-         * Flash.
-         */
 
         if (
             this.flash > 0
@@ -5537,10 +5714,6 @@ function loop(now) {
         now;
 
 
-    /*
-     * Never allow a huge physics step.
-     */
-
     dt =
         Math.min(
             dt,
@@ -5550,12 +5723,6 @@ function loop(now) {
 
     game.update(dt);
 
-
-    /*
-     * Screen shake.
-     *
-     * Apply it to the entire logical canvas.
-     */
 
     if (
         game.shake > 0
@@ -5590,11 +5757,6 @@ function loop(now) {
         );
 
 
-        /*
-         * Draw normally, but with a temporary
-         * transform.
-         */
-
         game.draw();
 
         ctx.restore();
@@ -5620,11 +5782,6 @@ requestAnimationFrame(
    SAFETY
 ========================================================= */
 
-/*
- * Prevent accidental browser gestures from
- * interfering with the game.
- */
-
 document.addEventListener(
     "gesturestart",
     event => {
@@ -5648,6 +5805,7 @@ document.addEventListener(
     },
     { passive: false }
 );
+
 </script>
 
 </body>
