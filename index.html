@@ -181,6 +181,8 @@ let pointerY = 0;
 
 let diveRequested = false;
 
+const TUTORIAL_DURATION = 15.5;
+
 
 /* =========================================================
    AUDIO
@@ -378,6 +380,11 @@ canvas.addEventListener("pointerdown", event => {
     pointerX = p.x;
     pointerY = p.y;
 
+    if (game.tutorialActive) {
+        game.skipTutorial();
+        return;
+    }
+
     if (!game.started || game.gameOver) {
         game.restart();
         return;
@@ -440,12 +447,14 @@ window.addEventListener("keydown", event => {
     }
 
     if (event.code === "Space") {
-        if (
-            !event.repeat &&
-            (!game.started || game.gameOver)
-        ) {
+        if (!event.repeat) {
             initAudio();
-            game.restart();
+
+            if (game.tutorialActive) {
+                game.skipTutorial();
+            } else if (!game.started || game.gameOver) {
+                game.restart();
+            }
         }
     }
 });
@@ -901,10 +910,7 @@ class Orb {
             game.player.phase = 0;
             game.player.diving = false;
 
-            game.player.vy = Math.min(
-                game.player.vy,
-                -GHOST_BOOST
-            );
+            game.player.vy = -700;
 
             game.showText(
                 "GHOST BOOST!",
@@ -937,6 +943,8 @@ class Orb {
         }
 
         if (this.type === "phase") {
+            game.flow = 0;
+            game.player.invulnerable = 0;
             game.player.phase = PHASE_DURATION;
             game.player.phasePlatformsPassed = 0;
             game.player.diving = false;
@@ -1777,6 +1785,9 @@ class Game {
         this.started = false;
         this.gameOver = false;
 
+        this.tutorialActive = !this.loadFlag("bounceTutorialSeen");
+        this.tutorialTime = 0;
+
         this.shake = 0;
         this.flash = 0;
 
@@ -1796,6 +1807,20 @@ class Game {
         }
     }
 
+    loadFlag(key) {
+        try {
+            return localStorage.getItem(key) === "1";
+        } catch (error) {
+            return false;
+        }
+    }
+
+    saveFlag(key) {
+        try {
+            localStorage.setItem(key, "1");
+        } catch (error) {}
+    }
+
     saveNumber(key, value) {
         try {
             localStorage.setItem(
@@ -1803,6 +1828,166 @@ class Game {
                 String(value)
             );
         } catch (error) {}
+    }
+
+    skipTutorial() {
+        if (!this.tutorialActive) return;
+
+        this.tutorialActive = false;
+        this.tutorialTime = 0;
+        this.saveFlag("bounceTutorialSeen");
+        this.restart();
+    }
+
+    updateTutorial(dt) {
+        this.tutorialTime += dt;
+
+        if (this.tutorialTime >= TUTORIAL_DURATION) {
+            this.skipTutorial();
+        }
+    }
+
+    tutorialScreen() {
+        const t = this.tutorialTime;
+        const phase = Math.min(6, Math.floor(t / 2.35));
+        const local = t % 2.35;
+
+        ctx.save();
+        ctx.fillStyle = "rgba(3,7,14,0.96)";
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+        ctx.textAlign = "center";
+        ctx.font = "bold 13px Arial";
+        ctx.fillStyle = "rgba(170,195,215,0.72)";
+        ctx.fillText("FIRST RUN · QUICK TUTORIAL", WIDTH / 2, 42);
+
+        ctx.font = "bold 34px Arial";
+        ctx.fillStyle = WHITE;
+        ctx.fillText("LEARN THE FLOW", WIDTH / 2, 88);
+
+        ctx.font = "15px Arial";
+        ctx.fillStyle = "rgba(185,205,220,0.82)";
+        ctx.fillText("Watch one ideal run. Then you play.", WIDTH / 2, 116);
+
+        const stages = [
+            ["DRAG", "Drag left and right to steer.", "#50dcff"],
+            ["DIVE", "Swipe down while falling to dive.", "#ff789c"],
+            ["GHOST", "Hit a ghost for a straight-up boost.", "#ffe06a"],
+            ["SAFE", "Grab safety. Fire cannot kill you.", "#72ffc2"],
+            ["FLOW 10", "Clean landings build Flow to 10.", "#ffd85a"],
+            ["MASTER", "Perfect. Edge. Ghost. Dive. Keep climbing.", "#ffd85a"],
+            ["DEATH", "Eventually, the fire wins. Your run begins.", "#ff7888"]
+        ];
+
+        const title = stages[Math.min(phase, stages.length - 1)];
+        ctx.font = "bold 22px Arial";
+        ctx.fillStyle = title[2];
+        ctx.fillText(title[0], WIDTH / 2, 154);
+        ctx.font = "14px Arial";
+        ctx.fillStyle = "rgba(225,235,245,0.9)";
+        ctx.fillText(title[1], WIDTH / 2, 178);
+
+        const floorY = 650;
+        ctx.strokeStyle = "rgba(60,190,230,0.25)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(50, floorY);
+        ctx.lineTo(WIDTH - 50, floorY);
+        ctx.stroke();
+
+        const p = this.tutorialPlayerPosition(phase, local);
+        this.drawTutorialPlatform(80, floorY, 145);
+        this.drawTutorialPlatform(315, floorY - 115, 120);
+        this.drawTutorialPlatform(155, floorY - 235, 125);
+        this.drawTutorialPlatform(335, floorY - 355, 100);
+
+        if (phase === 2) {
+            this.drawTutorialOrb(235, 420, "ghost");
+        }
+        if (phase === 3) {
+            this.drawTutorialOrb(235, 420, "invulnerable");
+        }
+
+        if (phase >= 4 && phase <= 5) {
+            for (let i = 0; i < 10; i++) {
+                const x = 145 + i * 21;
+                ctx.fillStyle = i < Math.min(10, Math.floor((local / 2.35) * 10) + 5) ? "#ffd85a" : "rgba(255,215,90,0.12)";
+                ctx.beginPath();
+                ctx.arc(x, 220, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        if (phase >= 6) {
+            const fireY = 690;
+            ctx.fillStyle = "rgba(40,220,200,0.28)";
+            ctx.fillRect(0, fireY, WIDTH, HEIGHT - fireY);
+            ctx.fillStyle = "rgba(255,70,90,0.9)";
+            ctx.fillRect(0, fireY, WIDTH, 3);
+        }
+
+        this.drawTutorialPlayer(p.x, p.y, phase);
+
+        ctx.font = "bold 15px Arial";
+        ctx.fillStyle = "rgba(240,250,255,0.9)";
+        ctx.fillText("TAP OR PRESS SPACE TO SKIP", WIDTH / 2, 748);
+        ctx.font = "12px Arial";
+        ctx.fillStyle = "rgba(145,170,190,0.65)";
+        ctx.fillText("The tutorial plays once on this device.", WIDTH / 2, 772);
+        ctx.restore();
+    }
+
+    tutorialPlayerPosition(phase, local) {
+        const u = local / 2.35;
+        const points = [
+            { x: 145, y: 620 },
+            { x: 360, y: 505 },
+            { x: 235, y: 390 },
+            { x: 245, y: 300 },
+            { x: 155, y: 240 },
+            { x: 340, y: 160 },
+            { x: 240, y: 640 }
+        ];
+        const a = points[Math.min(phase, points.length - 1)];
+        const b = points[Math.min(phase + 1, points.length - 1)];
+        return {
+            x: lerp(a.x, b.x, u),
+            y: lerp(a.y, b.y, u)
+        };
+    }
+
+    drawTutorialPlatform(x, y, width) {
+        ctx.save();
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = "rgba(70,220,255,0.32)";
+        ctx.fillStyle = "#183047";
+        roundedRect(x - width / 2, y - 14, width, 28, 7);
+        ctx.fillStyle = "#46dcff";
+        roundedRect(x - width / 2, y - 18, width, 10, 5);
+        ctx.restore();
+    }
+
+    drawTutorialOrb(x, y, type) {
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.shadowBlur = 28;
+        ctx.shadowColor = type === "ghost" ? "rgba(255,205,55,0.9)" : "rgba(70,255,185,0.9)";
+        ctx.fillStyle = type === "ghost" ? "#ffe06a" : "#72ffc2";
+        ctx.beginPath();
+        ctx.arc(x, y, 11, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+
+    drawTutorialPlayer(x, y, phase) {
+        ctx.save();
+        ctx.shadowBlur = phase >= 4 ? 32 : 20;
+        ctx.shadowColor = phase >= 4 ? "rgba(255,215,80,0.9)" : "rgba(80,220,255,0.7)";
+        ctx.fillStyle = phase >= 4 ? "#ffe16a" : "#f5faff";
+        ctx.beginPath();
+        ctx.arc(x, y, 17, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
     }
 
     restart() {
@@ -2659,7 +2844,7 @@ class Game {
                 25
             );
         } else if (landingType === "edge") {
-            points += 50;
+            points += 275;
 
             this.showText(
                 "EDGE!",
@@ -3432,132 +3617,88 @@ class Game {
     }
 
 
+    maxFlowAura() {
+        const pulse = 0.5 + Math.sin(this.time * 4) * 0.08;
+        const glow = ctx.createRadialGradient(
+            WIDTH / 2,
+            HEIGHT / 2,
+            130,
+            WIDTH / 2,
+            HEIGHT / 2,
+            420
+        );
+        glow.addColorStop(0, "rgba(255,210,70,0)");
+        glow.addColorStop(0.62, `rgba(255,205,55,${0.035 * pulse})`);
+        glow.addColorStop(0.86, `rgba(255,190,40,${0.11 * pulse})`);
+        glow.addColorStop(1, `rgba(255,170,25,${0.22 * pulse})`);
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        ctx.restore();
+    }
+
     /* =====================================================
        HUD
-    ===================================================== */
+    =====================================================
 
     hud() {
         ctx.save();
 
+        ctx.textAlign = "left";
+        ctx.font = "10px Arial";
+        ctx.fillStyle = "rgba(155,180,200,0.7)";
+        ctx.fillText("SCORE", 18, 28);
+        ctx.font = "bold 30px Arial";
+        ctx.fillStyle = WHITE;
+        ctx.fillText(this.score.toLocaleString(), 18, 57);
+
+        ctx.textAlign = "right";
+        ctx.font = "10px Arial";
+        ctx.fillStyle = "rgba(155,180,200,0.7)";
+        ctx.fillText("HEIGHT", WIDTH - 18, 28);
+        ctx.font = "bold 24px Arial";
+        ctx.fillStyle = "rgba(225,238,250,0.96)";
+        ctx.fillText(this.height.toLocaleString(), WIDTH - 18, 57);
+
         ctx.textAlign = "center";
-
-        ctx.font =
-            "bold 38px Arial";
-
-        ctx.fillStyle =
-            color(WHITE);
-
-        ctx.fillText(
-            this.score.toLocaleString(),
-            WIDTH / 2,
-            48
-        );
-
-        ctx.font = "14px Arial";
-
-        ctx.fillStyle =
-            "rgba(160,180,200,0.85)";
-
-        ctx.fillText(
-            "SCORE",
-            WIDTH / 2,
-            68
-        );
-
-        ctx.font =
-            "bold 20px Arial";
-
-        ctx.fillStyle =
-            "rgba(220,235,250,0.95)";
-
-        ctx.fillText(
-            `HEIGHT ${this.height.toLocaleString()}`,
-            WIDTH / 2,
-            96
-        );
-
-        if (this.flow >= 2) {
-            ctx.font =
-                "bold 22px Arial";
-
-            ctx.fillStyle =
-                this.flow >= 7
-                    ? "#ffe16a"
-                    : "#62f5d0";
-
-            ctx.shadowBlur = 12;
-
-            ctx.shadowColor =
-                this.flow >= 7
-                    ? "rgba(255,220,80,0.7)"
-                    : "rgba(90,245,210,0.65)";
-
-            ctx.fillText(
-                `FLOW x${this.flow}`,
-                WIDTH / 2,
-                128
-            );
-
-            ctx.shadowBlur = 0;
-
-            ctx.font = "11px Arial";
-
-            ctx.fillStyle =
-                "rgba(160,185,200,0.75)";
-
-            ctx.fillText(
-                "clean landings increase your score",
-                WIDTH / 2,
-                146
-            );
+        ctx.font = "bold 20px Arial";
+        ctx.fillStyle = this.flow >= 10 ? "#ffe16a" : this.flow >= 5 ? "#62f5d0" : "#50dcff";
+        if (this.flow >= 10) {
+            ctx.shadowBlur = 18;
+            ctx.shadowColor = "rgba(255,210,70,0.8)";
         }
+        ctx.fillText(`FLOW ${this.flow}/10`, WIDTH / 2, 39);
+        ctx.shadowBlur = 0;
+
+        const barX = WIDTH / 2 - 55;
+        const barY = 49;
+        const barW = 110;
+        const barH = 5;
+        ctx.fillStyle = "rgba(255,255,255,0.09)";
+        roundedRect(barX, barY, barW, barH, 3);
+        ctx.fillStyle = this.flow >= 10 ? "#ffd45a" : "#62f5d0";
+        roundedRect(barX, barY, barW * (this.flow / 10), barH, 3);
 
         if (this.player.invulnerable > 0) {
-            ctx.font =
-                "bold 17px Arial";
-
+            ctx.textAlign = "right";
+            ctx.font = "bold 14px Arial";
             ctx.fillStyle = "#72ffc2";
-
-            ctx.textAlign = "right";
-
-            ctx.fillText(
-                `SAFE ${this.player.invulnerable.toFixed(1)}s`,
-                WIDTH - 14,
-                34
-            );
-
+            ctx.fillText(`SAFE ${this.player.invulnerable.toFixed(1)}s`, WIDTH - 14, 82);
         } else if (this.player.ghost > 0) {
-            ctx.font =
-                "bold 17px Arial";
-
+            ctx.textAlign = "right";
+            ctx.font = "bold 14px Arial";
             ctx.fillStyle = "#ffe06a";
-
-            ctx.textAlign = "right";
-
-            ctx.fillText(
-                `GHOST ${this.player.ghost.toFixed(2)}s`,
-                WIDTH - 14,
-                34
-            );
-
+            ctx.fillText(`GHOST ${this.player.ghost.toFixed(2)}s`, WIDTH - 14, 82);
         } else if (this.player.phase > 0) {
-            ctx.font =
-                "bold 17px Arial";
-
-            ctx.fillStyle = "#ff7888";
-
             ctx.textAlign = "right";
-
-            ctx.fillText(
-                `PHASE ${this.player.phase.toFixed(2)}s`,
-                WIDTH - 14,
-                34
-            );
+            ctx.font = "bold 14px Arial";
+            ctx.fillStyle = "#ff7888";
+            ctx.fillText(`PHASE ${this.player.phase.toFixed(2)}s`, WIDTH - 14, 82);
         }
 
         ctx.restore();
     }
-
 
     /* =====================================================
        START SCREEN
@@ -3595,13 +3736,13 @@ class Game {
         ctx.shadowBlur = 0;
 
         ctx.font =
-            "bold 23px Arial";
+            "bold 24px Arial";
 
         ctx.fillStyle =
             "#50dcff";
 
         ctx.fillText(
-            "DRAG LEFT / RIGHT",
+            "DRAG TO STEER",
             WIDTH / 2,
             380
         );
@@ -3612,7 +3753,7 @@ class Game {
             "rgba(185,205,220,0.9)";
 
         ctx.fillText(
-            "Reach the next platform",
+            "Move through the platforms",
             WIDTH / 2,
             410
         );
@@ -3818,6 +3959,11 @@ class Game {
     update(dt) {
         this.time += dt;
         this.firePhase += dt;
+
+        if (this.tutorialActive) {
+            this.updateTutorial(dt);
+            return;
+        }
 
         if (this.gameOver) {
             this.updateEffects(dt);
@@ -4033,6 +4179,10 @@ class Game {
 
         this.background();
 
+        if (this.flow >= 10 && this.started && !this.gameOver) {
+            this.maxFlowAura();
+        }
+
         for (const platform of this.platforms) {
             platform.draw(
                 this.cameraY
@@ -4067,7 +4217,9 @@ class Game {
             this.hud();
         }
 
-        if (!this.started) {
+        if (this.tutorialActive) {
+            this.tutorialScreen();
+        } else if (!this.started) {
             this.startScreen();
         }
 
