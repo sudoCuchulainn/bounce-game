@@ -160,6 +160,13 @@ const BOUNCE_POWER = 980;
 
 const DIVE_BOUNCE_POWER = 1320;
 
+/*
+ * Much softer than a normal top bounce.
+ * Underside hits should mainly kill upward
+ * momentum and let the player fall back down.
+ */
+const UNDERSIDE_BOUNCE_POWER = 250;
+
 const MAX_FALL_SPEED = 1750;
 
 const DIVE_ACCELERATION = 2200;
@@ -219,16 +226,14 @@ const GOLD_ORB_SCORE = 50;
 const INVULNERABLE_DURATION = 4.5;
 
 /*
- * White + gold:
- * Full ghost ability.
+ * These are intentionally very short now.
+ * Just enough time to pass through roughly
+ * one platform instead of becoming a long-term
+ * movement state.
  */
-const GHOST_DURATION = 2.5;
+const GHOST_DURATION = 0.45;
 
-/*
- * White + red:
- * One-platform phase.
- */
-const PHASE_DURATION = 1.35;
+const PHASE_DURATION = 0.35;
 
 const GHOST_BOOST = 620;
 
@@ -848,8 +853,7 @@ function rgba(
         "," +
         c[2] +
         "," +
-        alpha +
-        ")"
+        alpha
     );
 }
 
@@ -1557,15 +1561,6 @@ class Orb {
             game.player.diving =
                 false;
 
-            /*
-             * The ghost orb now gives an
-             * immediate upward boost.
-             *
-             * This is deliberately strong enough
-             * to feel exciting without becoming
-             * a full automatic jump.
-             */
-
             game.player.vy =
                 Math.min(
                     game.player.vy,
@@ -1622,12 +1617,6 @@ class Orb {
 
             game.player.diving =
                 false;
-
-            /*
-             * Small upward nudge so the orb
-             * still feels like a pickup rather
-             * than just a defensive item.
-             */
 
             if (
                 game.player.vy > 0
@@ -1714,10 +1703,6 @@ class Orb {
                 "rgba(255,205,55,0.95)";
 
 
-            /*
-             * Gold outer halo.
-             */
-
             const halo =
                 ctx.createRadialGradient(
                     this.x,
@@ -1764,10 +1749,6 @@ class Orb {
             ctx.fill();
 
 
-            /*
-             * Gold ring.
-             */
-
             ctx.strokeStyle =
                 "rgba(255,210,55,0.95)";
 
@@ -1785,10 +1766,6 @@ class Orb {
 
             ctx.stroke();
 
-
-            /*
-             * White core.
-             */
 
             const core =
                 ctx.createRadialGradient(
@@ -1894,10 +1871,6 @@ class Orb {
             ctx.fill();
 
 
-            /*
-             * Red ring.
-             */
-
             ctx.strokeStyle =
                 "rgba(255,70,90,0.95)";
 
@@ -1915,10 +1888,6 @@ class Orb {
 
             ctx.stroke();
 
-
-            /*
-             * White core.
-             */
 
             ctx.fillStyle =
                 "#ffffff";
@@ -2046,10 +2015,6 @@ class Orb {
         }
 
 
-        /*
-         * Shine.
-         */
-
         ctx.fillStyle =
             "rgba(255,255,255,0.98)";
 
@@ -2122,11 +2087,6 @@ class Player {
         this.phasePlatformsPassed = 0;
 
         this.lastPlatform = null;
-
-        /*
-         * Prevents repeated bottom collision
-         * during the same frame.
-         */
 
         this.fireCooldown = 0;
     }
@@ -2464,10 +2424,6 @@ class Player {
             this.invulnerable > 0;
 
 
-        /*
-         * Trail.
-         */
-
         for (
             let i = 0;
             i < this.trail.length;
@@ -2538,10 +2494,6 @@ class Player {
             cameraY;
 
 
-        /*
-         * Invulnerability aura.
-         */
-
         if (
             protectedState
         ) {
@@ -2583,11 +2535,6 @@ class Player {
             ctx.restore();
         }
 
-
-        /*
-         * Ghost aura:
-         * WHITE BALL + GOLD HALO.
-         */
 
         if (
             ghosting
@@ -2632,11 +2579,6 @@ class Player {
         }
 
 
-        /*
-         * Phase aura:
-         * WHITE BALL + RED HALO.
-         */
-
         if (
             phasing
         ) {
@@ -2679,10 +2621,6 @@ class Player {
             ctx.restore();
         }
 
-
-        /*
-         * Ball.
-         */
 
         ctx.save();
 
@@ -2960,10 +2898,6 @@ class Game {
     }
 
 
-    /* =====================================================
-       INITIAL PLATFORMS
-    ===================================================== */
-
     spawnInitialPlatforms() {
 
         this.platforms = [];
@@ -3015,10 +2949,6 @@ class Game {
             "left";
     }
 
-
-    /* =====================================================
-       SPAWN PLATFORM
-    ===================================================== */
 
     spawnPlatform() {
 
@@ -3243,10 +3173,6 @@ class Game {
     }
 
 
-    /* =====================================================
-       ORB GENERATION
-    ===================================================== */
-
     maybeSpawnOrb(
         lowerPlatform,
         upperPlatform
@@ -3258,19 +3184,6 @@ class Game {
 
         let type;
 
-        /*
-         * Gold:
-         * 65%
-         *
-         * Safety:
-         * 13%
-         *
-         * Ghost:
-         * 12%
-         *
-         * Phase:
-         * 10%
-         */
 
         if (
             roll < 0.65
@@ -3360,10 +3273,6 @@ class Game {
         );
     }
 
-
-    /* =====================================================
-       PARTICLES
-    ===================================================== */
 
     addParticles(
         x,
@@ -3516,12 +3425,6 @@ class Game {
         platform
     ) {
 
-        /*
-         * FULL GHOST:
-         *
-         * Completely ignores platforms.
-         */
-
         if (
             player.ghost > 0
         ) {
@@ -3529,14 +3432,6 @@ class Game {
             return false;
         }
 
-
-        /*
-         * ONE-PLATFORM PHASE:
-         *
-         * Ignore exactly ONE platform,
-         * but only while actually falling
-         * through its top surface.
-         */
 
         const left =
             platform.left;
@@ -3698,12 +3593,8 @@ class Game {
         /*
          * PHASE:
          *
-         * Only consume the ability when
-         * the player is genuinely falling
-         * through the TOP of a platform.
-         *
-         * This prevents a side collision from
-         * accidentally consuming the phase.
+         * Phase is consumed only when passing
+         * downward through the top of a platform.
          */
 
         if (
@@ -3717,21 +3608,10 @@ class Game {
 
             player.phase = 0;
 
-            /*
-             * Push the player slightly below
-             * the platform so the same platform
-             * cannot collide again during the
-             * remaining substeps.
-             */
-
             player.y =
                 bottom +
                 player.radius +
                 2;
-
-            /*
-             * Keep the player falling.
-             */
 
             player.vy =
                 Math.max(
@@ -3879,7 +3759,12 @@ class Game {
 
 
         /*
-         * BOTTOM HIT
+         * UNDERSIDE HIT
+         *
+         * Instead of producing a strong
+         * upward rebound, cancel the upward
+         * momentum and give the player only
+         * a small downward bounce.
          */
 
         if (
@@ -3890,25 +3775,16 @@ class Game {
                 0.92;
 
             player.vy =
-                -Math.max(
-                    430,
-                    Math.min(
-                        720,
-                        Math.abs(
-                            player.vy
-                        ) *
-                        0.48
-                    )
-                );
+                UNDERSIDE_BOUNCE_POWER;
 
             player.diving =
                 false;
 
             player.squash =
-                1.18;
+                1.12;
 
             player.stretch =
-                0.84;
+                0.88;
 
             this.flow =
                 Math.max(
@@ -3923,6 +3799,10 @@ class Game {
                 10,
                 0.7
             );
+
+            this.shake = 2;
+
+            hapticBounce();
 
             return true;
         }
@@ -4150,13 +4030,6 @@ class Game {
 
     fireCollision() {
 
-        /*
-         * IMPORTANT:
-         *
-         * Fire is screen-space, so we calculate
-         * the player's screen Y first.
-         */
-
         const screenY =
             this.player.y +
             this.cameraY;
@@ -4167,10 +4040,6 @@ class Game {
             FIRE_HEIGHT;
 
 
-        /*
-         * Not touching the hazard.
-         */
-
         if (
             screenY +
             this.player.radius <
@@ -4180,11 +4049,6 @@ class Game {
             return false;
         }
 
-
-        /*
-         * Cooldown prevents multiple fire
-         * collisions during the same bounce.
-         */
 
         if (
             this.player.fireCooldown > 0
@@ -4197,22 +4061,13 @@ class Game {
         /*
          * INVULNERABLE:
          *
-         * Bounce immediately upward.
+         * Safety still protects the player.
          */
 
         if (
             this.player.invulnerable >
             0
         ) {
-
-            /*
-             * This is the critical fix:
-             *
-             * Instead of leaving the ball sitting
-             * at the bottom boundary, place it
-             * CLEARLY above the hazard and give it
-             * a strong upward velocity.
-             */
 
             this.player.y =
                 fireTop -
@@ -4244,10 +4099,6 @@ class Game {
             this.player.stretch =
                 0.62;
 
-
-            /*
-             * Prevent immediate re-trigger.
-             */
 
             this.player.fireCooldown =
                 0.28;
@@ -4294,10 +4145,6 @@ class Game {
             hapticBig();
 
 
-            /*
-             * Safety net is consumed.
-             */
-
             this.player.invulnerable =
                 0;
 
@@ -4306,44 +4153,9 @@ class Game {
 
 
         /*
-         * Ghost:
-         *
-         * Ghost passes through the fire too.
-         *
-         * However, we move it beyond the danger
-         * boundary so it cannot visually hover
-         * inside the fire.
-         */
-
-        if (
-            this.player.ghost > 0
-        ) {
-
-            if (
-                screenY >
-                HEIGHT + 15
-            ) {
-
-                this.player.y =
-                    HEIGHT -
-                    this.cameraY -
-                    this.player.radius -
-                    2;
-            }
-
-            return false;
-        }
-
-
-        /*
-         * PHASE:
-         *
-         * Phase is for platforms, not for
-         * surviving the fire.
-         */
-
-        /*
-         * NORMAL DEATH.
+         * Ghost and phase DO NOT protect
+         * against fire. They only affect
+         * platform collision.
          */
 
         this.die();
@@ -4450,7 +4262,7 @@ class Game {
 
 
     /* =====================================================
-       NEW CLEAN FIRE
+       REALISTIC NEON FLAMES
     ===================================================== */
 
     drawFire() {
@@ -4461,13 +4273,13 @@ class Game {
 
 
         /*
-         * Soft danger glow.
+         * Soft colored glow above the flames.
          */
 
         const danger =
             ctx.createLinearGradient(
                 0,
-                top - 35,
+                top - 45,
                 0,
                 HEIGHT
             );
@@ -4478,13 +4290,18 @@ class Game {
         );
 
         danger.addColorStop(
-            0.55,
-            "rgba(20,180,230,0.06)"
+            0.35,
+            "rgba(35,220,190,0.06)"
+        );
+
+        danger.addColorStop(
+            0.72,
+            "rgba(35,220,190,0.13)"
         );
 
         danger.addColorStop(
             1,
-            "rgba(10,80,120,0.24)"
+            "rgba(10,95,125,0.30)"
         );
 
         ctx.fillStyle =
@@ -4492,18 +4309,14 @@ class Game {
 
         ctx.fillRect(
             0,
-            top - 35,
+            top - 45,
             WIDTH,
-            FIRE_HEIGHT + 35
+            FIRE_HEIGHT + 45
         );
 
 
         /*
-         * CLEAN NEON HAZARD LINE
-         *
-         * Instead of dozens of giant flame
-         * triangles, this uses a moving energy
-         * field with small flame pulses.
+         * Base glow beneath the flames.
          */
 
         ctx.save();
@@ -4512,150 +4325,325 @@ class Game {
             "lighter";
 
         ctx.shadowBlur =
-            18;
+            24;
 
         ctx.shadowColor =
-            "rgba(40,210,255,0.75)";
+            "rgba(45,225,190,0.65)";
+
+        const base =
+            ctx.createLinearGradient(
+                0,
+                top,
+                0,
+                HEIGHT
+            );
+
+        base.addColorStop(
+            0,
+            "rgba(70,255,200,0.55)"
+        );
+
+        base.addColorStop(
+            0.35,
+            "rgba(35,220,210,0.35)"
+        );
+
+        base.addColorStop(
+            1,
+            "rgba(20,130,180,0.20)"
+        );
+
+        ctx.fillStyle =
+            base;
+
+        ctx.fillRect(
+            0,
+            top + 7,
+            WIDTH,
+            FIRE_HEIGHT
+        );
 
 
         /*
-         * Main cyan/green energy line.
+         * Individual organic flames.
+         *
+         * The flames use layered Bézier curves
+         * rather than sharp repeating spikes,
+         * giving the bottom edge a softer,
+         * more natural fire silhouette.
          */
 
-        ctx.strokeStyle =
-            "rgba(65,245,200,0.95)";
-
-        ctx.lineWidth = 3;
-
-        ctx.beginPath();
-
-        for (
-            let x = 0;
-            x <= WIDTH;
-            x += 6
-        ) {
-
-            const wave =
-                Math.sin(
-                    x * 0.055 +
-                    this.firePhase * 5
-                );
-
-            const wave2 =
-                Math.sin(
-                    x * 0.13 -
-                    this.firePhase * 7
-                );
-
-            const y =
-                top +
-                8 +
-                wave * 4 +
-                wave2 * 2;
-
-            if (
-                x === 0
-            ) {
-
-                ctx.moveTo(
-                    x,
-                    y
-                );
-
-            } else {
-
-                ctx.lineTo(
-                    x,
-                    y
-                );
-            }
-        }
-
-        ctx.stroke();
-
-
-        /*
-         * Small energy spikes.
-         */
+        const flameCount = 31;
 
         for (
             let i = 0;
-            i < 26;
+            i < flameCount;
             i++
         ) {
 
             const x =
                 (
-                    i / 25
+                    i + 0.5
                 ) *
-                WIDTH;
+                WIDTH /
+                flameCount;
 
-            const pulse =
+            const wave =
+                Math.sin(
+                    this.firePhase * 4.8 +
+                    i * 1.73
+                );
+
+            const wave2 =
+                Math.sin(
+                    this.firePhase * 7.1 -
+                    i * 0.91
+                );
+
+            const width =
+                18 +
                 (
-                    Math.sin(
-                        this.firePhase * 5 +
-                        i * 1.9
-                    ) +
-                    1
-                ) / 2;
+                    5 +
+                    wave * 3
+                );
 
-            const spikeHeight =
+            const height =
+                20 +
+                (
+                    wave2 + 1
+                ) *
                 7 +
-                pulse * 13;
+                (
+                    i % 3
+                ) * 4;
 
-            ctx.strokeStyle =
-                i % 2 === 0
-                    ? "rgba(55,255,155,0.65)"
-                    : "rgba(40,190,255,0.62)";
+            const baseY =
+                HEIGHT + 4;
 
-            ctx.lineWidth = 2;
+            const tipY =
+                top +
+                5 -
+                height;
+
+            const lean =
+                wave * 7;
+
+            const outerGradient =
+                ctx.createLinearGradient(
+                    0,
+                    tipY,
+                    0,
+                    baseY
+                );
+
+            outerGradient.addColorStop(
+                0,
+                "rgba(105,255,215,0.05)"
+            );
+
+            outerGradient.addColorStop(
+                0.20,
+                "rgba(75,255,205,0.55)"
+            );
+
+            outerGradient.addColorStop(
+                0.58,
+                "rgba(40,220,205,0.78)"
+            );
+
+            outerGradient.addColorStop(
+                1,
+                "rgba(20,135,180,0.70)"
+            );
+
+            ctx.fillStyle =
+                outerGradient;
 
             ctx.beginPath();
 
             ctx.moveTo(
-                x,
-                top + 13
+                x - width,
+                baseY
             );
 
-            ctx.lineTo(
-                x +
-                    Math.sin(
-                        i * 3
-                    ) * 3,
-                top +
-                    13 -
-                    spikeHeight
+            ctx.bezierCurveTo(
+                x - width * 0.95,
+                baseY - height * 0.35,
+                x - width * 0.62,
+                top + height * 0.28,
+                x - width * 0.18 + lean,
+                top + 8
             );
 
-            ctx.stroke();
+            ctx.bezierCurveTo(
+                x - width * 0.05 + lean,
+                top - height * 0.05,
+                x + width * 0.12 + lean,
+                tipY + height * 0.30,
+                x + lean,
+                tipY
+            );
+
+            ctx.bezierCurveTo(
+                x + width * 0.15 + lean,
+                tipY + height * 0.35,
+                x + width * 0.62,
+                top + height * 0.26,
+                x + width * 0.72,
+                top + 9
+            );
+
+            ctx.bezierCurveTo(
+                x + width * 0.95,
+                baseY - height * 0.28,
+                x + width,
+                baseY - height * 0.12,
+                x + width,
+                baseY
+            );
+
+            ctx.closePath();
+
+            ctx.fill();
+
+
+            /*
+             * Inner, brighter flame tongue.
+             */
+
+            const innerHeight =
+                height *
+                (
+                    0.42 +
+                    (
+                        wave + 1
+                    ) *
+                    0.07
+                );
+
+            const innerTip =
+                baseY -
+                innerHeight;
+
+            const innerGradient =
+                ctx.createLinearGradient(
+                    0,
+                    innerTip,
+                    0,
+                    baseY
+                );
+
+            innerGradient.addColorStop(
+                0,
+                "rgba(210,255,245,0.82)"
+            );
+
+            innerGradient.addColorStop(
+                0.28,
+                "rgba(105,255,220,0.88)"
+            );
+
+            innerGradient.addColorStop(
+                0.72,
+                "rgba(45,230,210,0.65)"
+            );
+
+            innerGradient.addColorStop(
+                1,
+                "rgba(30,170,195,0.25)"
+            );
+
+            ctx.fillStyle =
+                innerGradient;
+
+            ctx.beginPath();
+
+            ctx.moveTo(
+                x - width * 0.48,
+                baseY
+            );
+
+            ctx.bezierCurveTo(
+                x - width * 0.42,
+                baseY - innerHeight * 0.35,
+                x - width * 0.20,
+                innerTip + innerHeight * 0.30,
+                x + lean * 0.45,
+                innerTip
+            );
+
+            ctx.bezierCurveTo(
+                x + width * 0.16,
+                innerTip + innerHeight * 0.35,
+                x + width * 0.40,
+                baseY - innerHeight * 0.25,
+                x + width * 0.48,
+                baseY
+            );
+
+            ctx.closePath();
+
+            ctx.fill();
         }
 
 
         /*
-         * Thin blue lower glow.
+         * Irregular glowing flame crest.
+         * This blends neighboring flames together
+         * so the fire reads as one continuous body.
          */
 
-        ctx.strokeStyle =
-            "rgba(40,170,255,0.42)";
+        const crest =
+            ctx.createLinearGradient(
+                0,
+                top - 12,
+                0,
+                top + 22
+            );
 
-        ctx.lineWidth = 2;
+        crest.addColorStop(
+            0,
+            "rgba(150,255,225,0.08)"
+        );
+
+        crest.addColorStop(
+            0.5,
+            "rgba(70,255,210,0.55)"
+        );
+
+        crest.addColorStop(
+            1,
+            "rgba(35,200,195,0.25)"
+        );
+
+        ctx.fillStyle =
+            crest;
 
         ctx.beginPath();
 
         for (
             let x = 0;
             x <= WIDTH;
-            x += 8
+            x += 5
         ) {
 
-            const y =
-                HEIGHT -
-                5 +
+            const wave =
                 Math.sin(
-                    x * 0.08 +
-                    this.firePhase * 4
-                ) *
-                3;
+                    x * 0.055 +
+                    this.firePhase * 4.6
+                ) * 5;
+
+            const wave2 =
+                Math.sin(
+                    x * 0.117 -
+                    this.firePhase * 6.3
+                ) * 3;
+
+            const y =
+                top +
+                8 +
+                wave +
+                wave2;
 
             if (
                 x === 0
@@ -4675,14 +4663,125 @@ class Game {
             }
         }
 
-        ctx.stroke();
+        ctx.lineTo(
+            WIDTH,
+            top + 22
+        );
+
+        ctx.lineTo(
+            0,
+            top + 22
+        );
+
+        ctx.closePath();
+
+        ctx.fill();
+
+
+        /*
+         * Small floating embers.
+         */
+
+        for (
+            let i = 0;
+            i < 22;
+            i++
+        ) {
+
+            const x =
+                (
+                    i * 97 +
+                    31
+                ) %
+                WIDTH;
+
+            const motion =
+                (
+                    this.firePhase *
+                    (
+                        18 +
+                        i % 5 * 4
+                    ) +
+                    i * 19
+                ) %
+                42;
+
+            const sway =
+                Math.sin(
+                    this.firePhase * 3 +
+                    i
+                ) * 4;
+
+            const y =
+                top -
+                4 -
+                motion;
+
+            const alpha =
+                clamp(
+                    0.52 -
+                    motion / 100,
+                    0.08,
+                    0.52
+                );
+
+            ctx.fillStyle =
+                i % 2 === 0
+                    ? `rgba(80,255,210,${alpha})`
+                    : `rgba(45,190,255,${alpha})`;
+
+            ctx.beginPath();
+
+            ctx.arc(
+                x + sway,
+                y,
+                1.2 +
+                    (
+                        i % 3
+                    ) * 0.6,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.fill();
+        }
 
         ctx.restore();
 
 
         /*
-         * Minimal danger label.
+         * Very subtle lower edge glow.
          */
+
+        ctx.save();
+
+        ctx.strokeStyle =
+            "rgba(40,175,235,0.34)";
+
+        ctx.lineWidth = 2;
+
+        ctx.shadowBlur =
+            10;
+
+        ctx.shadowColor =
+            "rgba(40,190,240,0.45)";
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+            0,
+            HEIGHT - 2
+        );
+
+        ctx.lineTo(
+            WIDTH,
+            HEIGHT - 2
+        );
+
+        ctx.stroke();
+
+        ctx.restore();
+
 
         ctx.save();
 
@@ -4693,7 +4792,7 @@ class Game {
             "bold 10px Arial";
 
         ctx.fillStyle =
-            "rgba(160,245,225,0.48)";
+            "rgba(160,245,225,0.42)";
 
         ctx.fillText(
             "DANGER",
@@ -4882,10 +4981,6 @@ class Game {
         }
 
 
-        /*
-         * Active safety.
-         */
-
         if (
             this.player.invulnerable >
             0
@@ -4907,10 +5002,6 @@ class Game {
             );
 
 
-        /*
-         * Active ghost.
-         */
-
         } else if (
             this.player.ghost >
             0
@@ -4926,15 +5017,11 @@ class Game {
                 "right";
 
             ctx.fillText(
-                `GHOST ${this.player.ghost.toFixed(1)}s`,
+                `GHOST ${this.player.ghost.toFixed(2)}s`,
                 WIDTH - 14,
                 34
             );
 
-
-        /*
-         * Active phase.
-         */
 
         } else if (
             this.player.phase >
@@ -4951,7 +5038,7 @@ class Game {
                 "right";
 
             ctx.fillText(
-                `PHASE ${this.player.phase.toFixed(1)}s`,
+                `PHASE ${this.player.phase.toFixed(2)}s`,
                 WIDTH - 14,
                 34
             );
@@ -5036,10 +5123,6 @@ class Game {
             435
         );
 
-
-        /*
-         * Orb legend.
-         */
 
         ctx.font =
             "bold 14px Arial";
